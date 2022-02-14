@@ -203,9 +203,17 @@ public class ConversationAdapter
         View                          itemView        = CachedInflater.from(parent.getContext()).inflate(getLayoutForViewType(viewType), parent, false);
         BindableConversationItem      bindable        = (BindableConversationItem) itemView;
 
-        itemView.setOnClickListener((v) -> {
-          if (clickListener != null) {
-            clickListener.onItemClick(bindable.getMultiselectPartForLatestTouch());
+        itemView.setOnClickListener(new DoubleClickListener() {
+          @Override public void onSingleClick(View v) {
+            if (clickListener != null) {
+              clickListener.onItemClick(bindable.getMultiselectPartForLatestTouch());
+            }
+          }
+
+          @Override public void onDoubleClick(View v) {
+            if (clickListener != null) {
+              clickListener.onItemDoubleClick(bindable.getMultiselectPartForLatestTouch());
+            }
           }
         });
 
@@ -821,5 +829,6 @@ public class ConversationAdapter
   interface ItemClickListener extends BindableConversationItem.EventListener {
     void onItemClick(MultiselectPart item);
     void onItemLongClick(View itemView, MultiselectPart item);
+    void onItemDoubleClick(MultiselectPart item);
   }
 }

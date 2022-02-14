@@ -91,6 +91,7 @@ import org.thoughtcrime.securesms.conversation.ConversationAdapter.StickyHeaderV
 import org.thoughtcrime.securesms.conversation.colors.Colorizer;
 import org.thoughtcrime.securesms.conversation.colors.RecyclerViewColorizer;
 import org.thoughtcrime.securesms.conversation.mutiselect.ConversationItemAnimator;
+import org.thoughtcrime.securesms.conversation.mutiselect.Multiselect;
 import org.thoughtcrime.securesms.conversation.mutiselect.MultiselectItemDecoration;
 import org.thoughtcrime.securesms.conversation.mutiselect.MultiselectPart;
 import org.thoughtcrime.securesms.conversation.mutiselect.forward.MultiselectForwardFragment;
@@ -103,6 +104,7 @@ import org.thoughtcrime.securesms.database.SignalDatabase;
 import org.thoughtcrime.securesms.database.SmsDatabase;
 import org.thoughtcrime.securesms.database.model.InMemoryMessageRecord;
 import org.thoughtcrime.securesms.database.model.MediaMmsMessageRecord;
+import org.thoughtcrime.securesms.database.model.MessageId;
 import org.thoughtcrime.securesms.database.model.MessageRecord;
 import org.thoughtcrime.securesms.database.model.MmsMessageRecord;
 import org.thoughtcrime.securesms.database.model.ReactionRecord;
@@ -1418,11 +1420,30 @@ public class ConversationFragment extends LoggingFragment implements Multiselect
     }
 
     @Override
+    public void onItemDoubleClick(MultiselectPart item) {
+      MessageRecord messageRecord = item.getConversationMessage().getMessageRecord();
+      String emoji = SignalStore.emojiValues().getReactions().get(0);
+
+      SignalExecutors.BOUNDED.execute(() -> {
+        ReactionRecord oldRecord = Stream.of(messageRecord.getReactions())
+                                         .filter(record -> record.getAuthor().equals(Recipient.self().getId()))
+                                         .findFirst()
+                                         .orElse(null);
+
+        if (oldRecord != null && oldRecord.getEmoji().equals(emoji)) {
+          MessageSender.sendReactionRemoval(requireContext(), new MessageId(messageRecord.getId(), messageRecord.isMms()), oldRecord);
+        } else {
+          MessageSender.sendNewReaction(requireContext(), new MessageId(messageRecord.getId(), messageRecord.isMms()), emoji);
+        }
+      });
+    }
+
+    @Override
     public void onItemLongClick(View itemView, MultiselectPart item) {
 
       if (actionMode != null) return;
 
-      MessageRecord messageRecord = item.getConversationMessage().getMessageRecord();;
+      MessageRecord messageRecord = item.getConversationMessage().getMessageRecord();
 
       if (messageRecord.isSecure()                                        &&
           !messageRecord.isRemoteDelete()                                 &&
