@@ -1608,6 +1608,10 @@
   <string name="NotificationChannel_voice_notes">یادداشت‌های صوتی</string>
   <string name="NotificationChannel_contact_joined_signal">مخاطب به سیگنال پیوست</string>
   <string name="NotificationChannels__no_activity_available_to_open_notification_channel_settings">هیچ فعالیتی برای باز کردن تنظیمات کانال اعلان‌ها در دسترس نیست.</string>
+  <!--Notification channel name for showing persistent background connection on devices without push notifications-->
+  <string name="NotificationChannel_background_connection">اتصال پس‌زمینه</string>
+  <!--Notification channel name for showing call status information (like connection, ongoing, etc.) Not ringing.-->
+  <string name="NotificationChannel_call_status">وضعیت تماس</string>
   <!--ProfileEditNameFragment-->
   <!--QuickResponseService-->
   <string name="QuickResponseService_quick_response_unavailable_when_Signal_is_locked">پاسخ سریع هنگام قفل بودن سیگنال در دسترس نیست!</string>
@@ -3443,8 +3447,12 @@
   <!--Copy displayed when badge expires after user inactivity-->
   <string name="ExpiredBadgeBottomSheetDialogFragment__your_sustainer_subscription_was_automatically">اشتراک حامی شما به صورت خودکار لغو گردید چون شما برای مدتی طولانی غیرفعال بودید. نشان %1$s شما دیگر روی پروفایل شما قابل مشاهده نیست.</string>
   <!--Copy displayed when badge expires after payment failure-->
+  <string name="ExpiredBadgeBottomSheetDialogFragment__your_sustainer_subscription_was_canceled">اشتراک حمایتی شما لغو شد، چرا که ما نتوانستیم پرداخت شما را پردازش کنیم. نشان شما دیگر روی پروفایل‌تان قابل رؤیت نیست.</string>
   <string name="ExpiredBadgeBottomSheetDialogFragment__you_can">شما می‌توانید به استفاده از سیگنال ادامه دهید اما برای پشتیبانی از برنامه و فعال کردن دوبارهٔ نشان خود، حالا تمدید کنید.</string>
   <string name="ExpiredBadgeBottomSheetDialogFragment__renew_subscription">تمدید اشتراک</string>
+  <string name="CantProcessSubscriptionPaymentBottomSheetDialogFragment__cant_process_subscription_payment">امکان پردازش پرداخت وجود ندارد</string>
+  <string name="CantProcessSubscriptionPaymentBottomSheetDialogFragment__were_having_trouble">ما در جمع‌آوری پرداخت حمایت از سیگنال شما دچار مشکل هستیم. مطمئن شوید که روش پرداختی شما به‌روز است. در غیر این صورت، آن را در Google Play به‌روزرسانی کنید. سیگنال پردازش پرداخت را دوباره طی چند روز آینده امتحان خواهد کرد.</string>
+  <string name="CantProcessSubscriptionPaymentBottomSheetDialogFragment__dont_show_this_again">این را دیگر نمایش نده</string>
   <string name="Subscription__please_contact_support_for_more_information">لطفاً با پشتیبانی برای اطلاعات بیشتر تماس بگیرید.</string>
   <string name="Subscription__contact_support">تماس با پشتیبانی</string>
   <string name="Subscription__earn_a_s_badge">یک نشان %1$s بدست آورید</string>
@@ -3467,13 +3475,19 @@
   <string name="NetworkFailure__network_error_check_your_connection_and_try_again">خطای شبکه. اتصال خود را بررسی و دوباره امتحان کنید.</string>
   <string name="NetworkFailure__retry">تلاش مجدد</string>
   <!--Stripe decline code generic_failure-->
+  <string name="DeclineCode__try_another_payment_method_or_contact_your_bank">یک روش پرداختی دیگر را امتحان کنید یا با بانک خود برای اطلاعات بیشتر تماس بگیرید.</string>
   <!--Stripe decline code verify on Google Pay and try again-->
+  <string name="DeclineCode__verify_your_payment_method_is_up_to_date_in_google_pay_and_try_again">مطمئن شوید که روش پرداختی شما در Google Play به‌روز است و دوباره امتحان کنید.</string>
   <!--Stripe decline code learn more action label-->
   <string name="DeclineCode__learn_more">بیشتر یاد بگیرید</string>
   <!--Stripe decline code contact issuer-->
+  <string name="DeclineCode__verify_your_payment_method_is_up_to_date_in_google_pay_and_try_again_if_the_problem">تأیید کنید که روش پرداخت شما در Google Pay به‌روز است و دوباره تلاش کنید. اگر مشکل ادامه پیدا کرد، با بانک خود تماس بگیرید.</string>
   <!--Stripe decline code purchase not supported-->
+  <string name="DeclineCode__your_card_does_not_support_this_type_of_purchase">کارت شما از این نوع از خرید پشتیبانی نمی‌کند. از روش پرداخت دیگری استفاده کنید.</string>
   <!--Stripe decline code your card has expired-->
+  <string name="DeclineCode__your_card_has_expired">کارت شما منقضی شده است. روش پرداخت خود را در Google Pay به‌روزرسانی کرده و دوباره تلاش کنید.</string>
   <!--Stripe decline code go to google pay action label-->
+  <string name="DeclineCode__go_to_google_pay">به Google Pay بروید</string>
   <!--Stripe decline code incorrect card number-->
   <!--Stripe decline code incorrect cvc-->
   <!--Stripe decline code insufficient funds-->
