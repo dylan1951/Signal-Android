@@ -11,10 +11,14 @@ import androidx.annotation.WorkerThread;
 import com.annimon.stream.Collectors;
 import com.annimon.stream.Stream;
 
+import org.signal.core.util.ListUtil;
 import org.signal.core.util.concurrent.SignalExecutors;
 import org.signal.core.util.logging.Log;
-import org.signal.zkgroup.profiles.ProfileKey;
-import org.signal.zkgroup.profiles.ProfileKeyCredential;
+import org.signal.libsignal.protocol.IdentityKey;
+import org.signal.libsignal.protocol.InvalidKeyException;
+import org.signal.libsignal.protocol.util.Pair;
+import org.signal.libsignal.zkgroup.profiles.ProfileKey;
+import org.signal.libsignal.zkgroup.profiles.ProfileKeyCredential;
 import org.thoughtcrime.securesms.badges.Badges;
 import org.thoughtcrime.securesms.badges.models.Badge;
 import org.thoughtcrime.securesms.crypto.ProfileKeyUtil;
@@ -34,15 +38,12 @@ import org.thoughtcrime.securesms.recipients.RecipientId;
 import org.thoughtcrime.securesms.recipients.RecipientUtil;
 import org.thoughtcrime.securesms.transport.RetryLaterException;
 import org.thoughtcrime.securesms.util.Base64;
+import org.thoughtcrime.securesms.util.FeatureFlags;
 import org.thoughtcrime.securesms.util.IdentityUtil;
 import org.thoughtcrime.securesms.util.ProfileUtil;
-import org.thoughtcrime.securesms.util.SetUtil;
+import org.signal.core.util.SetUtil;
 import org.thoughtcrime.securesms.util.Stopwatch;
 import org.thoughtcrime.securesms.util.Util;
-import org.whispersystems.libsignal.IdentityKey;
-import org.whispersystems.libsignal.InvalidKeyException;
-import org.whispersystems.libsignal.util.Pair;
-import org.whispersystems.libsignal.util.guava.Optional;
 import org.whispersystems.signalservice.api.crypto.InvalidCiphertextException;
 import org.whispersystems.signalservice.api.crypto.ProfileCipher;
 import org.whispersystems.signalservice.api.profiles.ProfileAndCredential;
@@ -58,6 +59,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
@@ -292,11 +294,11 @@ public class RetrieveProfileJob extends BaseJob {
                                                         .map(Pair::first)
                                                         .filterNot(Recipient::isRegistered)
                                                         .collect(Collectors.toMap(Recipient::getId,
-                                                                                  r -> r.getServiceId().orNull()));
+                                                                                  r -> r.getServiceId().orElse(null)));
 
 
     //noinspection SimplifyStreamApiCallChains
-    Util.chunk(operationState.profiles, 150).stream().forEach(list -> {
+    ListUtil.chunk(operationState.profiles, 150).stream().forEach(list -> {
       SignalDatabase.runInTransaction(() -> {
         for (Pair<Recipient, ProfileAndCredential> profile : list) {
           process(profile.first(), profile.second());
@@ -305,7 +307,8 @@ public class RetrieveProfileJob extends BaseJob {
     });
 
     recipientDatabase.markProfilesFetched(success, System.currentTimeMillis());
-    if (operationState.unregistered.size() > 0 || newlyRegistered.size() > 0) {
+    // XXX The service hasn't implemented profiles for PNIs yet, so if using PNP CDS we don't want to mark users without profiles as unregistered.
+    if ((operationState.unregistered.size() > 0 || newlyRegistered.size() > 0) && !FeatureFlags.usePnpCds()) {
       Log.i(TAG, "Marking " + newlyRegistered.size() + " users as registered and " + operationState.unregistered.size() + " users as unregistered.");
       recipientDatabase.bulkUpdatedRegisteredStatus(newlyRegistered, operationState.unregistered);
     }
@@ -448,6 +451,11 @@ public class RetrieveProfileJob extends BaseJob {
 
       String plaintextProfileName = Util.emptyIfNull(ProfileUtil.decryptString(profileKey, profileName));
 
+      if (TextUtils.isEmpty(plaintextProfileName)) {
+        Log.w(TAG, "No name set on the profile for " + recipient.getId() + " -- Leaving it alone");
+        return;
+      }
+
       ProfileName remoteProfileName = ProfileName.fromSerialized(plaintextProfileName);
       ProfileName localProfileName  = recipient.getProfileName();
 
@@ -470,10 +478,6 @@ public class RetrieveProfileJob extends BaseJob {
           Log.i(TAG, String.format(Locale.US, "Name changed, but wasn't relevant to write an event. blocked: %s, group: %s, self: %s, firstSet: %s, displayChange: %s",
                                    recipient.isBlocked(), recipient.isGroup(), recipient.isSelf(), localDisplayName.isEmpty(), !remoteDisplayName.equals(localDisplayName)));
         }
-      }
-
-      if (TextUtils.isEmpty(plaintextProfileName)) {
-        Log.i(TAG, "No profile name set for " + recipient.getId());
       }
     } catch (InvalidCiphertextException e) {
       Log.w(TAG, "Bad profile key for " + recipient.getId());
@@ -500,7 +504,9 @@ public class RetrieveProfileJob extends BaseJob {
     if (recipient.getProfileKey() == null) return;
     if (!Util.equals(profileAvatar, recipient.getProfileAvatar())) {
       SignalDatabase.runPostSuccessfulTransaction(DEDUPE_KEY_RETRIEVE_AVATAR + recipient.getId(), () -> {
-        ApplicationDependencies.getJobManager().add(new RetrieveProfileAvatarJob(recipient, profileAvatar));
+        SignalExecutors.BOUNDED.execute(() -> {
+          ApplicationDependencies.getJobManager().add(new RetrieveProfileAvatarJob(recipient, profileAvatar));
+        });
       });
     }
   }
