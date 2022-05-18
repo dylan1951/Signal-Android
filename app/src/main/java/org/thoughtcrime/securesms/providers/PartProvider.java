@@ -21,13 +21,13 @@ import android.content.ContentValues;
 import android.content.UriMatcher;
 import android.database.Cursor;
 import android.net.Uri;
+import android.os.MemoryFile;
 import android.os.ParcelFileDescriptor;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import org.signal.core.util.StreamUtil;
-import org.signal.core.util.concurrent.SignalExecutors;
 import org.signal.core.util.logging.Log;
 import org.thoughtcrime.securesms.BuildConfig;
 import org.thoughtcrime.securesms.attachments.AttachmentId;
@@ -35,9 +35,10 @@ import org.thoughtcrime.securesms.attachments.DatabaseAttachment;
 import org.thoughtcrime.securesms.database.SignalDatabase;
 import org.thoughtcrime.securesms.mms.PartUriParser;
 import org.thoughtcrime.securesms.service.KeyCachingService;
+import org.thoughtcrime.securesms.util.MemoryFileUtil;
+import org.thoughtcrime.securesms.util.Util;
 
 import java.io.FileNotFoundException;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -102,7 +103,7 @@ public final class PartProvider extends BaseContentProvider {
   public String getType(@NonNull Uri uri) {
     Log.i(TAG, "getType() called: " + uri);
 
-    if (uriMatcher.match(uri) == SINGLE_ROW && SignalDatabase.getInstance() != null) {
+    if (uriMatcher.match(uri) == SINGLE_ROW) {
       PartUriParser      partUriParser = new PartUriParser(uri);
       DatabaseAttachment attachment    = SignalDatabase.attachments().getAttachment(partUriParser.getPartId());
 
@@ -154,44 +155,16 @@ public final class PartProvider extends BaseContentProvider {
   }
 
   private ParcelFileDescriptor getParcelStreamForAttachment(AttachmentId attachmentId) throws IOException {
-    ParcelFileDescriptor[] reliablePipe = ParcelFileDescriptor.createReliablePipe();
+    long       plaintextLength = StreamUtil.getStreamLength(SignalDatabase.attachments().getAttachmentStream(attachmentId, 0));
+    MemoryFile memoryFile      = new MemoryFile(attachmentId.toString(), Util.toIntExact(plaintextLength));
 
-    SignalExecutors.BOUNDED_IO.execute(() -> {
-      SignalDatabase signalDatabase = SignalDatabase.getInstance();
-      if (signalDatabase == null) {
-        Log.w(TAG, "Database is not available");
-        try {
-          reliablePipe[1].closeWithError("Unable to access database");
-        } catch (IOException e) {
-          Log.w(TAG, "Unable to close pipe after no database", e);
-        }
-        return;
-      }
+    InputStream  in  = SignalDatabase.attachments().getAttachmentStream(attachmentId, 0);
+    OutputStream out = memoryFile.getOutputStream();
 
-      Throwable error = null;
-      try (OutputStream out = new FileOutputStream(reliablePipe[1].getFileDescriptor())) {
-        try (InputStream in = signalDatabase.getAttachments().getAttachmentStream(attachmentId, 0)) {
-          StreamUtil.copy(in, out);
-        } catch (IOException e) {
-          Log.w(TAG, "Error providing file", e);
-          error = e;
-        }
-      } catch (IOException e) {
-        Log.w(TAG, "Error opening pipe for writing", e);
-        error = e;
-      } finally {
-        try {
-          if (error != null) {
-            reliablePipe[1].closeWithError("Error writing file: " + error.getMessage());
-          } else {
-            reliablePipe[1].close();
-          }
-        } catch (IOException e2) {
-          Log.w(TAG, "Error closing pipe", e2);
-        }
-      }
-    });
+    StreamUtil.copy(in, out);
+    StreamUtil.close(out);
+    StreamUtil.close(in);
 
-    return reliablePipe[0];
+    return MemoryFileUtil.getParcelFileDescriptor(memoryFile);
   }
 }
