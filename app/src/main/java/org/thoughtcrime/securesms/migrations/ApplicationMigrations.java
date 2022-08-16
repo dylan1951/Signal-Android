@@ -102,9 +102,13 @@ public class ApplicationMigrations {
     static final int PNI_IDENTITY_3                = 58;
     static final int STORY_DISTRIBUTION_LIST_SYNC  = 59;
     static final int EMOJI_VERSION_7               = 60;
+    static final int MY_STORY_PRIVACY_MODE         = 61;
+    static final int REFRESH_EXPIRING_CREDENTIAL   = 62;
+    static final int EMOJI_SEARCH_INDEX_10         = 63;
+    static final int REFRESH_PNI_REGISTRATION_ID   = 64;
   }
 
-  public static final int CURRENT_VERSION = 60;
+  public static final int CURRENT_VERSION = 64;
 
   /**
    * This *must* be called after the {@link JobManager} has been instantiated, but *before* the call
@@ -444,6 +448,22 @@ public class ApplicationMigrations {
 
     if (lastSeenVersion < Version.EMOJI_VERSION_7) {
       jobs.put(Version.EMOJI_VERSION_7, new EmojiDownloadMigrationJob());
+    }
+
+    if (lastSeenVersion < Version.MY_STORY_PRIVACY_MODE) {
+      jobs.put(Version.MY_STORY_PRIVACY_MODE, new SyncDistributionListsMigrationJob());
+    }
+
+    if (lastSeenVersion < Version.REFRESH_EXPIRING_CREDENTIAL) {
+      jobs.put(Version.REFRESH_EXPIRING_CREDENTIAL, new AttributesMigrationJob());
+    }
+
+    if (lastSeenVersion < Version.EMOJI_SEARCH_INDEX_10) {
+      jobs.put(Version.EMOJI_SEARCH_INDEX_10, new EmojiDownloadMigrationJob());
+    }
+
+    if (lastSeenVersion < Version.REFRESH_PNI_REGISTRATION_ID) {
+      jobs.put(Version.REFRESH_PNI_REGISTRATION_ID, new AttributesMigrationJob());
     }
 
     return jobs;

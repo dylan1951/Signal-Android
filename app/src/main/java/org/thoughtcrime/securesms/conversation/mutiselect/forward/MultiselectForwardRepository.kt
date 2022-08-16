@@ -1,7 +1,7 @@
 package org.thoughtcrime.securesms.conversation.mutiselect.forward
 
-import android.content.Context
 import io.reactivex.rxjava3.core.Single
+import io.reactivex.rxjava3.schedulers.Schedulers
 import org.signal.core.util.concurrent.SignalExecutors
 import org.thoughtcrime.securesms.contacts.paged.ContactSearchKey
 import org.thoughtcrime.securesms.database.SignalDatabase
@@ -9,15 +9,33 @@ import org.thoughtcrime.securesms.recipients.Recipient
 import org.thoughtcrime.securesms.recipients.RecipientId
 import org.thoughtcrime.securesms.sharing.MultiShareArgs
 import org.thoughtcrime.securesms.sharing.MultiShareSender
+import org.thoughtcrime.securesms.stories.Stories
+import org.whispersystems.signalservice.api.util.Preconditions
 import java.util.Optional
 
-class MultiselectForwardRepository(context: Context) {
+class MultiselectForwardRepository {
 
   class MultiselectForwardResultHandlers(
     val onAllMessageSentSuccessfully: () -> Unit,
     val onSomeMessagesFailed: () -> Unit,
     val onAllMessagesFailed: () -> Unit
   )
+
+  fun checkAllSelectedMediaCanBeSentToStories(records: List<MultiShareArgs>): Single<Stories.MediaTransform.SendRequirements> {
+    Preconditions.checkArgument(records.isNotEmpty())
+
+    if (!Stories.isFeatureEnabled()) {
+      return Single.just(Stories.MediaTransform.SendRequirements.CAN_NOT_SEND)
+    }
+
+    return Single.fromCallable {
+      if (records.any { !it.isValidForStories }) {
+        Stories.MediaTransform.SendRequirements.CAN_NOT_SEND
+      } else {
+        Stories.MediaTransform.getSendRequirements(records.map { it.media }.flatten())
+      }
+    }.subscribeOn(Schedulers.io())
+  }
 
   fun canSelectRecipient(recipientId: Optional<RecipientId>): Single<Boolean> {
     if (!recipientId.isPresent) {

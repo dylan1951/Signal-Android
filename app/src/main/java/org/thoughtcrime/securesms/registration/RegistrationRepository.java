@@ -73,6 +73,15 @@ public final class RegistrationRepository {
     return registrationId;
   }
 
+  public int getPniRegistrationId() {
+    int pniRegistrationId = SignalStore.account().getPniRegistrationId();
+    if (pniRegistrationId == 0) {
+      pniRegistrationId = KeyHelper.generateRegistrationId(false);
+      SignalStore.account().setPniRegistrationId(pniRegistrationId);
+    }
+    return pniRegistrationId;
+  }
+
   public @NonNull ProfileKey getProfileKey(@NonNull String e164) {
     ProfileKey profileKey = findExistingProfileKey(e164);
 
@@ -150,7 +159,7 @@ public final class RegistrationRepository {
     }
 
     RecipientDatabase recipientDatabase = SignalDatabase.recipients();
-    RecipientId       selfId            = Recipient.externalPush(aci, registrationData.getE164(), true).getId();
+    RecipientId       selfId            = Recipient.externalPush(new SignalServiceAddress(aci, registrationData.getE164())).getId();
 
     recipientDatabase.setProfileSharing(selfId, true);
     recipientDatabase.markRegisteredOrThrow(selfId, aci);

@@ -109,7 +109,7 @@
 
     <meta-data
             android:name="com.google.android.geo.API_KEY"
-            android:value="AIzaSyCSx9xea86GwDKGznCAULE9Y5a8b-TfN9U"/>
+            android:value="${mapsKey}"/>
 
     <meta-data android:name="android.supports_size_changes"
                android:value="true" />
@@ -224,7 +224,7 @@
             <data android:scheme="sgnl"
                   android:host="addstickers" />
         </intent-filter>
-        <intent-filter>
+        <intent-filter android:autoVerify="true">
             <action android:name="android.intent.action.VIEW" />
             <category android:name="android.intent.category.DEFAULT" />
             <category android:name="android.intent.category.BROWSABLE" />
@@ -258,7 +258,7 @@
               android:noHistory="true"
               android:theme="@style/Signal.Transparent">
 
-        <intent-filter>
+        <intent-filter android:autoVerify="true">
             <action android:name="android.intent.action.VIEW" />
             <category android:name="android.intent.category.DEFAULT" />
             <category android:name="android.intent.category.BROWSABLE" />
@@ -275,7 +275,7 @@
                   android:host="signal.group"/>
         </intent-filter>
 
-        <intent-filter>
+        <intent-filter android:autoVerify="true">
             <action android:name="android.intent.action.VIEW" />
             <category android:name="android.intent.category.DEFAULT" />
             <category android:name="android.intent.category.BROWSABLE" />
@@ -285,7 +285,7 @@
                   android:host="signal.tube" />
         </intent-filter>
 
-        <intent-filter>
+        <intent-filter android:autoVerify="true">
             <action android:name="android.intent.action.VIEW" />
             <category android:name="android.intent.category.DEFAULT" />
             <category android:name="android.intent.category.BROWSABLE" />
@@ -366,10 +366,20 @@
               android:configChanges="touchscreen|keyboard|keyboardHidden|orientation|screenLayout|screenSize"/>
 
         <activity android:name=".mediasend.v2.MediaSelectionActivity"
-            android:theme="@style/TextSecure.FullScreenMedia"
+            android:theme="@style/TextSecure.DarkNoActionBar"
             android:windowSoftInputMode="stateAlwaysHidden|adjustNothing"
             android:launchMode="singleTop"
             android:configChanges="touchscreen|keyboard|keyboardHidden|orientation|screenLayout|screenSize"/>
+
+        <activity android:name=".conversation.mutiselect.forward.MultiselectForwardActivity"
+            android:theme="@style/Signal.DayNight.NoActionBar"
+            android:windowSoftInputMode="stateAlwaysHidden|adjustNothing"
+            android:configChanges="touchscreen|keyboard|keyboardHidden|orientation|screenLayout|screenSize" />
+
+        <activity android:name=".mediasend.v2.stories.StoriesMultiselectForwardActivity"
+            android:theme="@style/Signal.DayNight.NoActionBar"
+            android:windowSoftInputMode="stateAlwaysHidden|adjustNothing"
+            android:configChanges="touchscreen|keyboard|keyboardHidden|orientation|screenLayout|screenSize" />
 
     <activity android:name=".PassphraseChangeActivity"
               android:label="@string/AndroidManifest__change_passphrase"
@@ -406,7 +416,14 @@
         android:screenOrientation="portrait"
         android:configChanges="touchscreen|keyboard|keyboardHidden|orientation|screenLayout|screenSize"
         android:theme="@style/TextSecure.DarkNoActionBar.StoryViewer"
-        android:windowSoftInputMode="stateAlwaysHidden|adjustNothing" />
+        android:launchMode="singleTask"
+        android:windowSoftInputMode="stateAlwaysHidden|adjustNothing"
+        android:parentActivityName=".MainActivity">
+
+        <meta-data
+            android:name="android.support.PARENT_ACTIVITY"
+            android:value="org.thoughtcrime.securesms.MainActivity" />
+    </activity>
 
         <activity android:name=".components.settings.app.changenumber.ChangeNumberLockActivity"
             android:theme="@style/Signal.DayNight.NoActionBar"
@@ -464,6 +481,7 @@
               android:configChanges="touchscreen|keyboard|keyboardHidden|orientation|screenLayout|screenSize"/>
 
      <activity android:name=".DeviceActivity"
+               android:screenOrientation="portrait"
                android:label="@string/AndroidManifest__linked_devices"
                android:configChanges="touchscreen|keyboard|keyboardHidden|orientation|screenLayout|screenSize"/>
 
@@ -652,7 +670,7 @@
               android:theme="@style/Theme.Signal.DayNight.NoActionBar"
               android:configChanges="touchscreen|keyboard|keyboardHidden|orientation|screenLayout|screenSize"/>
 
-    <service android:enabled="true" android:name=".service.webrtc.WebRtcCallService"/>
+    <service android:enabled="true" android:name=".service.webrtc.WebRtcCallService" android:foregroundServiceType="camera|microphone"/>
     <service android:enabled="true" android:name=".service.ApplicationMigrationService"/>
     <service android:enabled="true" android:exported="false" android:name=".service.KeyCachingService"/>
     <service android:enabled="true" android:name=".messages.IncomingMessageObserver$ForegroundService"/>

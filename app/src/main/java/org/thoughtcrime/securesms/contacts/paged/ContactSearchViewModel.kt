@@ -14,13 +14,16 @@ import org.signal.paging.PagingController
 import org.thoughtcrime.securesms.groups.SelectionLimits
 import org.thoughtcrime.securesms.recipients.Recipient
 import org.thoughtcrime.securesms.util.livedata.Store
+import org.whispersystems.signalservice.api.util.Preconditions
 
 /**
  * Simple, reusable view model that manages a ContactSearchPagedDataSource as well as filter and expansion state.
  */
 class ContactSearchViewModel(
   private val selectionLimits: SelectionLimits,
-  private val contactSearchRepository: ContactSearchRepository
+  private val contactSearchRepository: ContactSearchRepository,
+  private val performSafetyNumberChecks: Boolean,
+  private val safetyNumberRepository: SafetyNumberRepository = SafetyNumberRepository(),
 ) : ViewModel() {
 
   private val disposables = CompositeDisposable()
@@ -74,6 +77,10 @@ class ContactSearchViewModel(
         return@subscribe
       }
 
+      if (performSafetyNumberChecks) {
+        safetyNumberRepository.batchSafetyNumberCheck(newSelectionEntries)
+      }
+
       selectionStore.update { state -> state + newSelectionEntries }
     }
   }
@@ -91,15 +98,44 @@ class ContactSearchViewModel(
       state.copy(
         groupStories = state.groupStories + groupStories.map {
           val recipient = Recipient.resolved(it.recipientId)
-          ContactSearchData.Story(recipient, recipient.participants.size)
+          ContactSearchData.Story(recipient, recipient.participantIds.size)
         }
       )
     }
   }
 
-  class Factory(private val selectionLimits: SelectionLimits, private val repository: ContactSearchRepository) : ViewModelProvider.Factory {
-    override fun <T : ViewModel?> create(modelClass: Class<T>): T {
-      return modelClass.cast(ContactSearchViewModel(selectionLimits, repository)) as T
+  fun removeGroupStory(story: ContactSearchData.Story) {
+    Preconditions.checkArgument(story.recipient.isGroup)
+    setKeysNotSelected(setOf(story.contactSearchKey))
+    disposables += contactSearchRepository.unmarkDisplayAsStory(story.recipient.requireGroupId()).subscribe {
+      configurationStore.update { state ->
+        state.copy(
+          groupStories = state.groupStories.filter { it.recipient.id == story.recipient.id }.toSet()
+        )
+      }
+      refresh()
+    }
+  }
+
+  fun deletePrivateStory(story: ContactSearchData.Story) {
+    Preconditions.checkArgument(story.recipient.isDistributionList && !story.recipient.isMyStory)
+    setKeysNotSelected(setOf(story.contactSearchKey))
+    disposables += contactSearchRepository.deletePrivateStory(story.recipient.requireDistributionListId()).subscribe {
+      refresh()
+    }
+  }
+
+  fun refresh() {
+    controller.value?.onDataInvalidated()
+  }
+
+  class Factory(
+    private val selectionLimits: SelectionLimits,
+    private val repository: ContactSearchRepository,
+    private val performSafetyNumberChecks: Boolean
+  ) : ViewModelProvider.Factory {
+    override fun <T : ViewModel> create(modelClass: Class<T>): T {
+      return modelClass.cast(ContactSearchViewModel(selectionLimits, repository, performSafetyNumberChecks)) as T
     }
   }
 }

@@ -89,11 +89,13 @@ public class DonationReceiptRedemptionJob extends BaseJob {
             .setLifespan(TimeUnit.DAYS.toMillis(1))
             .build());
 
-    RefreshOwnProfileJob refreshOwnProfileJob = new RefreshOwnProfileJob();
+    RefreshOwnProfileJob               refreshOwnProfileJob               = new RefreshOwnProfileJob();
+    MultiDeviceProfileContentUpdateJob multiDeviceProfileContentUpdateJob = new MultiDeviceProfileContentUpdateJob();
 
     return ApplicationDependencies.getJobManager()
                                   .startChain(redeemReceiptJob)
-                                  .then(refreshOwnProfileJob);
+                                  .then(refreshOwnProfileJob)
+                                  .then(multiDeviceProfileContentUpdateJob);
   }
 
   private DonationReceiptRedemptionJob(long giftMessageId, boolean primary, @NonNull DonationErrorSource errorSource, @NonNull Job.Parameters parameters) {
@@ -147,8 +149,7 @@ public class DonationReceiptRedemptionJob extends BaseJob {
     ServiceResponse<EmptyResponse> response = ApplicationDependencies.getDonationsService()
                                                                      .redeemReceipt(presentation,
                                                                                     SignalStore.donationsValues().getDisplayBadgesOnProfile(),
-                                                                                    makePrimary)
-                                                                     .blockingGet();
+                                                                                    makePrimary);
 
     if (response.getApplicationError().isPresent()) {
       if (response.getStatus() >= 500) {

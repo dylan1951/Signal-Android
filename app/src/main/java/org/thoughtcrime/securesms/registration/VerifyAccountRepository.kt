@@ -39,7 +39,7 @@ class VerifyAccountRepository(private val context: Application) {
     Log.d(TAG, "SMS Verification requested")
 
     return Single.fromCallable {
-      val fcmToken: Optional<String> = FcmUtil.getToken()
+      val fcmToken: Optional<String> = FcmUtil.getToken(context)
       val accountManager = AccountManagerFactory.createUnauthenticated(context, e164, SignalServiceAddress.DEFAULT_DEVICE_ID, password)
       val pushChallenge = PushChallengeRequest.getPushChallengeBlocking(accountManager, fcmToken, e164, PUSH_REQUEST_TIMEOUT)
 
@@ -70,7 +70,8 @@ class VerifyAccountRepository(private val context: Application) {
         unidentifiedAccessKey,
         universalUnidentifiedAccess,
         AppCapabilities.getCapabilities(true),
-        SignalStore.phoneNumberPrivacy().phoneNumberListingMode.isDiscoverable
+        SignalStore.phoneNumberPrivacy().phoneNumberListingMode.isDiscoverable,
+        registrationData.pniRegistrationId
       )
     }.subscribeOn(Schedulers.io())
   }
@@ -99,7 +100,8 @@ class VerifyAccountRepository(private val context: Application) {
           unidentifiedAccessKey,
           universalUnidentifiedAccess,
           AppCapabilities.getCapabilities(true),
-          SignalStore.phoneNumberPrivacy().phoneNumberListingMode.isDiscoverable
+          SignalStore.phoneNumberPrivacy().phoneNumberListingMode.isDiscoverable,
+          registrationData.pniRegistrationId
         )
         VerifyAccountWithRegistrationLockResponse.from(response, kbsData)
       } catch (e: KeyBackupSystemWrongPinException) {

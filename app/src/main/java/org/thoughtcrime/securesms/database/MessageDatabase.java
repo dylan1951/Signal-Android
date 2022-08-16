@@ -45,6 +45,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Iterator;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -78,6 +79,7 @@ public abstract class MessageDatabase extends Database implements MmsSmsColumns 
   public abstract int getMessageCountForThread(long threadId);
   public abstract int getMessageCountForThread(long threadId, long beforeTime);
   public abstract boolean hasMeaningfulMessage(long threadId);
+  public abstract int getIncomingMeaningfulMessageCountSince(long threadId, long afterTime);
   public abstract Optional<MmsNotificationInfo> getNotification(long messageId);
 
   public abstract Cursor getExpirationStartedMessages();
@@ -127,7 +129,7 @@ public abstract class MessageDatabase extends Database implements MmsSmsColumns 
   public abstract void markGiftRedemptionFailed(long messageId);
 
   public abstract Set<MessageUpdate> incrementReceiptCount(SyncMessageId messageId, long timestamp, @NonNull ReceiptType receiptType, boolean storiesOnly);
-  abstract @NonNull MmsSmsDatabase.TimestampReadResult setTimestampRead(SyncMessageId messageId, long proposedExpireStarted, @NonNull Map<Long, Long> threadToLatestRead);
+
   public abstract List<MarkedMessageInfo> setEntireThreadRead(long threadId);
   public abstract List<MarkedMessageInfo> setMessagesReadSince(long threadId, long timestamp);
   public abstract List<MarkedMessageInfo> setAllMessagesRead();
@@ -135,6 +137,7 @@ public abstract class MessageDatabase extends Database implements MmsSmsColumns 
   public abstract @NonNull List<MarkedMessageInfo> getViewedIncomingMessages(long threadId);
   public abstract @Nullable MarkedMessageInfo setIncomingMessageViewed(long messageId);
   public abstract @NonNull List<MarkedMessageInfo> setIncomingMessagesViewed(@NonNull List<Long> messageIds);
+  public abstract @NonNull List<MarkedMessageInfo> setOutgoingGiftsRevealed(@NonNull List<Long> messageIds);
 
   public abstract void addFailures(long messageId, List<NetworkFailure> failure);
   public abstract void setNetworkFailures(long messageId, Set<NetworkFailure> failures);
@@ -188,21 +191,24 @@ public abstract class MessageDatabase extends Database implements MmsSmsColumns 
 
   public abstract boolean isStory(long messageId);
   public abstract @NonNull Reader getOutgoingStoriesTo(@NonNull RecipientId recipientId);
-  public abstract @NonNull Reader getAllOutgoingStories(boolean reverse);
+  public abstract @NonNull Reader getAllOutgoingStories(boolean reverse, int limit);
   public abstract @NonNull Reader getAllOutgoingStoriesAt(long sentTimestamp);
-  public abstract @NonNull List<StoryResult> getOrderedStoryRecipientsAndIds();
-  public abstract @NonNull Reader getAllStoriesFor(@NonNull RecipientId recipientId);
+  public abstract @NonNull List<StoryResult> getOrderedStoryRecipientsAndIds(boolean isOutgoingOnly);
+  public abstract @NonNull Reader getAllStoriesFor(@NonNull RecipientId recipientId, int limit);
   public abstract @NonNull MessageId getStoryId(@NonNull RecipientId authorId, long sentTimestamp) throws NoSuchMessageException;
   public abstract int getNumberOfStoryReplies(long parentStoryId);
   public abstract @NonNull List<RecipientId>  getUnreadStoryThreadRecipientIds();
   public abstract boolean containsStories(long threadId);
   public abstract boolean hasSelfReplyInStory(long parentStoryId);
+  public abstract boolean hasSelfReplyInGroupStory(long parentStoryId);
   public abstract @NonNull Cursor getStoryReplies(long parentStoryId);
-  public abstract @Nullable Long getOldestStorySendTimestamp();
-  public abstract int deleteStoriesOlderThan(long timestamp);
+  public abstract @Nullable Long getOldestStorySendTimestamp(boolean hasSeenReleaseChannelStories);
+  public abstract int deleteStoriesOlderThan(long timestamp, boolean hasSeenReleaseChannelStories);
   public abstract @NonNull MessageDatabase.Reader getUnreadStories(@NonNull RecipientId recipientId, int limit);
   public abstract @Nullable ParentStoryId.GroupReply getParentStoryIdForGroupReply(long messageId);
   public abstract void deleteGroupStoryReplies(long parentStoryId);
+  public abstract boolean isOutgoingStoryAlreadyInDatabase(@NonNull RecipientId recipientId, long sentTimestamp);
+  public abstract @NonNull List<MarkedMessageInfo> setGroupStoryMessagesReadSince(long threadId, long groupStoryId, long sinceTimestamp);
 
   public abstract @NonNull StoryViewState getStoryViewState(@NonNull RecipientId recipientId);
   public abstract void updateViewedStories(@NonNull Set<SyncMessageId> syncMessageIds);
@@ -269,6 +275,50 @@ public abstract class MessageDatabase extends Database implements MmsSmsColumns 
         return 0;
       }
     }
+  }
+
+  /**
+   * Handles a synchronized read message.
+   * @param messageId An id representing the author-timestamp pair of the message that was read on a linked device. Note that the author could be self when
+   *                  syncing read receipts for reactions.
+   */
+  final @NonNull MmsSmsDatabase.TimestampReadResult setTimestampReadFromSyncMessage(SyncMessageId messageId, long proposedExpireStarted, @NonNull Map<Long, Long> threadToLatestRead) {
+    SQLiteDatabase         database   = databaseHelper.getSignalWritableDatabase();
+    List<Pair<Long, Long>> expiring   = new LinkedList<>();
+    String[]               projection = new String[] { ID, THREAD_ID, EXPIRES_IN, EXPIRE_STARTED };
+    String                 query      = getDateSentColumnName() + " = ? AND (" + RECIPIENT_ID + " = ? OR (" + RECIPIENT_ID + " = ? AND " + getOutgoingTypeClause() + "))";
+    String[]               args       = SqlUtil.buildArgs(messageId.getTimetamp(), messageId.getRecipientId(), Recipient.self().getId());
+    List<Long>             threads    = new LinkedList<>();
+
+    try (Cursor cursor = database.query(getTableName(), projection, query, args, null, null, null)) {
+      while (cursor.moveToNext()) {
+        long id            = cursor.getLong(cursor.getColumnIndexOrThrow(ID));
+        long threadId      = cursor.getLong(cursor.getColumnIndexOrThrow(THREAD_ID));
+        long expiresIn     = cursor.getLong(cursor.getColumnIndexOrThrow(EXPIRES_IN));
+        long expireStarted = cursor.getLong(cursor.getColumnIndexOrThrow(EXPIRE_STARTED));
+
+        expireStarted = expireStarted > 0 ? Math.min(proposedExpireStarted, expireStarted) : proposedExpireStarted;
+
+        ContentValues values = new ContentValues();
+        values.put(READ, 1);
+        values.put(REACTIONS_UNREAD, 0);
+        values.put(REACTIONS_LAST_SEEN, System.currentTimeMillis());
+
+        if (expiresIn > 0) {
+          values.put(EXPIRE_STARTED, expireStarted);
+          expiring.add(new Pair<>(id, expiresIn));
+        }
+
+        database.update(getTableName(), values, ID_WHERE, SqlUtil.buildArgs(id));
+
+        threads.add(threadId);
+
+        Long latest = threadToLatestRead.get(threadId);
+        threadToLatestRead.put(threadId, (latest != null) ? Math.max(latest, messageId.getTimetamp()) : messageId.getTimetamp());
+      }
+    }
+
+    return new MmsSmsDatabase.TimestampReadResult(expiring, threads);
   }
 
   private int getMessageCountForRecipientsAndType(String typeClause) {
@@ -724,9 +774,38 @@ public abstract class MessageDatabase extends Database implements MmsSmsColumns 
     void onComplete();
   }
 
-  public interface Reader extends Closeable {
+  /**
+   * Allows the developer to safely iterate over and close a cursor containing
+   * data for MessageRecord objects. Supports for-each loops as well as try-with-resources
+   * blocks.
+   *
+   * Readers are considered "one-shot" and it's on the caller to decide what needs
+   * to be done with the data. Once read, a reader cannot be read from again. This
+   * is by design, since reading data out of a cursor involves object creations and
+   * lookups, so it is in the best interest of app performance to only read out the
+   * data once. If you need to parse the list multiple times, it is recommended that
+   * you copy the iterable out into a normal List, or use extension methods such as
+   * partition.
+   *
+   * This reader does not support removal, since this would be considered a destructive
+   * database call.
+   */
+  public interface Reader extends Closeable, Iterable<MessageRecord> {
+    /**
+     * @deprecated Use the Iterable interface instead.
+     */
+    @Deprecated
     MessageRecord getNext();
+
+    /**
+     * @deprecated Use the Iterable interface instead.
+     */
+    @Deprecated
     MessageRecord getCurrent();
+
+    /**
+     * From the {@link Closeable} interface, removing the IOException requirement.
+     */
     void close();
   }
 

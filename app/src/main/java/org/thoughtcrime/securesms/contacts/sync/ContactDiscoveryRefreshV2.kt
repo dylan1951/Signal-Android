@@ -3,6 +3,7 @@ package org.thoughtcrime.securesms.contacts.sync
 import android.content.Context
 import androidx.annotation.WorkerThread
 import org.signal.contacts.SystemContactsRepository
+import org.signal.core.util.Stopwatch
 import org.signal.core.util.logging.Log
 import org.signal.libsignal.zkgroup.profiles.ProfileKey
 import org.thoughtcrime.securesms.BuildConfig
@@ -13,9 +14,8 @@ import org.thoughtcrime.securesms.keyvalue.SignalStore
 import org.thoughtcrime.securesms.phonenumbers.PhoneNumberFormatter
 import org.thoughtcrime.securesms.recipients.Recipient
 import org.thoughtcrime.securesms.recipients.RecipientId
-import org.thoughtcrime.securesms.util.Stopwatch
 import org.whispersystems.signalservice.api.push.ServiceId
-import org.whispersystems.signalservice.api.services.CdshV2Service
+import org.whispersystems.signalservice.api.services.CdsiV2Service
 import java.io.IOException
 import java.util.Optional
 
@@ -41,7 +41,12 @@ object ContactDiscoveryRefreshV2 {
   fun refreshAll(context: Context): ContactDiscovery.RefreshResult {
     val stopwatch = Stopwatch("refresh-all")
 
-    val previousE164s: Set<String> = SignalDatabase.cds.getAllE164s()
+    val previousE164s: Set<String> = if (SignalStore.misc().cdsToken != null) {
+      SignalDatabase.cds.getAllE164s()
+    } else {
+      Log.w(TAG, "No token set! Cannot provide previousE164s.")
+      emptySet()
+    }
     stopwatch.split("previous")
 
     val recipientE164s: Set<String> = SignalDatabase.recipients.getAllE164s().sanitize()
@@ -54,14 +59,15 @@ object ContactDiscoveryRefreshV2 {
 
     val newE164s: Set<String> = newRecipientE164s + newSystemE164s
 
-    val response: CdshV2Service.Response = makeRequest(
+    val response: CdsiV2Service.Response = makeRequest(
       previousE164s = previousE164s,
       newE164s = newE164s,
       serviceIds = SignalDatabase.recipients.getAllServiceIdProfileKeyPairs(),
+      token = SignalStore.misc().cdsToken,
+      saveToken = true
     )
     stopwatch.split("network")
 
-    SignalStore.misc().cdsToken = response.token
     SignalDatabase.cds.updateAfterCdsQuery(newE164s, recipientE164s + systemE164s)
     stopwatch.split("cds-db")
 
@@ -70,6 +76,9 @@ object ContactDiscoveryRefreshV2 {
         .mapValues { entry -> RecipientDatabase.CdsV2Result(entry.value.pni, entry.value.aci.orElse(null)) }
     )
     stopwatch.split("recipient-db")
+
+    SignalDatabase.recipients.bulkUpdatedRegisteredStatus(registeredIds.associateWith { null }, emptyList())
+    stopwatch.split("update-registered")
 
     stopwatch.stop(TAG)
 
@@ -106,10 +115,12 @@ object ContactDiscoveryRefreshV2 {
       Log.i(TAG, "Doing a one-off request for ${inputE164s.size} recipients.")
     }
 
-    val response: CdshV2Service.Response = makeRequest(
+    val response: CdsiV2Service.Response = makeRequest(
       previousE164s = emptySet(),
       newE164s = inputE164s,
-      serviceIds = SignalDatabase.recipients.getAllServiceIdProfileKeyPairs()
+      serviceIds = SignalDatabase.recipients.getAllServiceIdProfileKeyPairs(),
+      token = null,
+      saveToken = false
     )
     stopwatch.split("network")
 
@@ -119,21 +130,27 @@ object ContactDiscoveryRefreshV2 {
     )
     stopwatch.split("recipient-db")
 
+    SignalDatabase.recipients.bulkUpdatedRegisteredStatus(registeredIds.associateWith { null }, emptyList())
+    stopwatch.split("update-registered")
+
     stopwatch.stop(TAG)
 
     return ContactDiscovery.RefreshResult(registeredIds, emptyMap())
   }
 
   @Throws(IOException::class)
-  private fun makeRequest(previousE164s: Set<String>, newE164s: Set<String>, serviceIds: Map<ServiceId, ProfileKey>): CdshV2Service.Response {
-    return ApplicationDependencies.getSignalServiceAccountManager().getRegisteredUsersWithCdshV2(
+  private fun makeRequest(previousE164s: Set<String>, newE164s: Set<String>, serviceIds: Map<ServiceId, ProfileKey>, token: ByteArray?, saveToken: Boolean): CdsiV2Service.Response {
+    return ApplicationDependencies.getSignalServiceAccountManager().getRegisteredUsersWithCdsi(
       previousE164s,
       newE164s,
       serviceIds,
-      Optional.ofNullable(SignalStore.misc().cdsToken),
-      BuildConfig.CDSH_PUBLIC_KEY,
-      BuildConfig.CDSH_CODE_HASH
-    )
+      Optional.ofNullable(token),
+      BuildConfig.CDSI_MRENCLAVE
+    ) { token ->
+      if (saveToken) {
+        SignalStore.misc().cdsToken = token
+      }
+    }
   }
 
   private fun Set<String>.toE164s(context: Context): Set<String> {

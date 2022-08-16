@@ -48,6 +48,14 @@ class StoryTextPostView @JvmOverloads constructor(
     TextStoryTextWatcher.install(textView)
   }
 
+  fun getLinkPreviewThumbnailWidth(useLargeThumbnail: Boolean): Int {
+    return linkPreviewView.getThumbnailViewWidth(useLargeThumbnail)
+  }
+
+  fun getLinkPreviewThumbnailHeight(useLargeThumbnail: Boolean): Int {
+    return linkPreviewView.getThumbnailViewHeight(useLargeThumbnail)
+  }
+
   fun showCloseButton() {
     linkPreviewView.setCanClose(true)
   }
@@ -108,7 +116,7 @@ class StoryTextPostView @JvmOverloads constructor(
         context.getString(R.string.TextStoryPostCreationFragment__tap_to_add_text)
       }.let {
         if (state.textFont.isAllCaps) {
-          it.toString().toUpperCase(Locale.getDefault())
+          it.toString().uppercase(Locale.getDefault())
         } else {
           it
         }
@@ -134,7 +142,7 @@ class StoryTextPostView @JvmOverloads constructor(
     setPostBackground(ChatColors.forChatColor(ChatColors.Id.NotSet, storyTextPost.background).chatBubbleMask)
 
     if (font.isAllCaps) {
-      setText(storyTextPost.body.toUpperCase(Locale.getDefault()), false)
+      setText(storyTextPost.body.uppercase(Locale.getDefault()), false)
     } else {
       setText(storyTextPost.body, false)
     }
@@ -148,12 +156,16 @@ class StoryTextPostView @JvmOverloads constructor(
     postAdjustLinkPreviewTranslationY()
   }
 
-  fun bindLinkPreview(linkPreview: LinkPreview?): ListenableFuture<Boolean> {
-    return linkPreviewView.bind(linkPreview, View.GONE)
+  fun bindLinkPreview(linkPreview: LinkPreview?, useLargeThumbnail: Boolean, loadThumbnail: Boolean = true): ListenableFuture<Boolean> {
+    return linkPreviewView.bind(linkPreview, View.GONE, useLargeThumbnail, loadThumbnail)
   }
 
-  fun bindLinkPreviewState(linkPreviewState: LinkPreviewViewModel.LinkPreviewState, hiddenVisibility: Int) {
-    linkPreviewView.bind(linkPreviewState, hiddenVisibility)
+  fun setLinkPreviewDrawable(drawable: Drawable?, useLargeThumbnail: Boolean) {
+    linkPreviewView.setThumbnailDrawable(drawable, useLargeThumbnail)
+  }
+
+  fun bindLinkPreviewState(linkPreviewState: LinkPreviewViewModel.LinkPreviewState, hiddenVisibility: Int, useLargeThumbnail: Boolean) {
+    linkPreviewView.bind(linkPreviewState, hiddenVisibility, useLargeThumbnail)
   }
 
   fun postAdjustLinkPreviewTranslationY() {
@@ -186,7 +198,7 @@ class StoryTextPostView @JvmOverloads constructor(
   }
 
   private fun canDisplayText(): Boolean {
-    return !(linkPreviewView.isVisible && isPlaceholder)
+    return !(linkPreviewView.isVisible && (isPlaceholder || textView.text.isEmpty()))
   }
 
   private fun adjustLinkPreviewTranslationY() {

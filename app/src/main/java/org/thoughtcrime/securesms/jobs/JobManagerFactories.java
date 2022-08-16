@@ -45,6 +45,7 @@ import org.thoughtcrime.securesms.migrations.EmojiDownloadMigrationJob;
 import org.thoughtcrime.securesms.migrations.KbsEnclaveMigrationJob;
 import org.thoughtcrime.securesms.migrations.LegacyMigrationJob;
 import org.thoughtcrime.securesms.migrations.MigrationCompleteJob;
+import org.thoughtcrime.securesms.migrations.SyncDistributionListsMigrationJob;
 import org.thoughtcrime.securesms.migrations.PassingMigrationJob;
 import org.thoughtcrime.securesms.migrations.PinOptOutMigration;
 import org.thoughtcrime.securesms.migrations.PinReminderMigrationJob;
@@ -141,7 +142,6 @@ public final class JobManagerFactories {
       put(PushDistributionListSendJob.KEY,           new PushDistributionListSendJob.Factory());
       put(PushGroupSendJob.KEY,                      new PushGroupSendJob.Factory());
       put(PushGroupSilentUpdateSendJob.KEY,          new PushGroupSilentUpdateSendJob.Factory());
-      put(PushGroupUpdateJob.KEY,                    new PushGroupUpdateJob.Factory());
       put(PushMediaSendJob.KEY,                      new PushMediaSendJob.Factory());
       put(PushNotificationReceiveJob.KEY,            new PushNotificationReceiveJob.Factory());
       put(PushProcessEarlyMessagesJob.KEY,           new PushProcessEarlyMessagesJob.Factory());
@@ -155,7 +155,6 @@ public final class JobManagerFactories {
       put(RemoteConfigRefreshJob.KEY,                new RemoteConfigRefreshJob.Factory());
       put(RemoteDeleteSendJob.KEY,                   new RemoteDeleteSendJob.Factory());
       put(ReportSpamJob.KEY,                         new ReportSpamJob.Factory());
-      put(RequestGroupInfoJob.KEY,                   new RequestGroupInfoJob.Factory());
       put(ResendMessageJob.KEY,                      new ResendMessageJob.Factory());
       put(ResumableUploadSpecJob.KEY,                new ResumableUploadSpecJob.Factory());
       put(RequestGroupV2InfoWorkerJob.KEY,           new RequestGroupV2InfoWorkerJob.Factory());
@@ -183,6 +182,7 @@ public final class JobManagerFactories {
       put(StorageSyncJob.KEY,                        new StorageSyncJob.Factory());
       put(SubscriptionKeepAliveJob.KEY,              new SubscriptionKeepAliveJob.Factory());
       put(SubscriptionReceiptRequestResponseJob.KEY, new SubscriptionReceiptRequestResponseJob.Factory());
+      put(StoryOnboardingDownloadJob.KEY,            new StoryOnboardingDownloadJob.Factory());
       put(SubmitRateLimitPushChallengeJob.KEY,       new SubmitRateLimitPushChallengeJob.Factory());
       put(ThreadUpdateJob.KEY,                       new ThreadUpdateJob.Factory());
       put(TrimThreadJob.KEY,                         new TrimThreadJob.Factory());
@@ -206,6 +206,7 @@ public final class JobManagerFactories {
       put(KbsEnclaveMigrationJob.KEY,                new KbsEnclaveMigrationJob.Factory());
       put(LegacyMigrationJob.KEY,                    new LegacyMigrationJob.Factory());
       put(MigrationCompleteJob.KEY,                  new MigrationCompleteJob.Factory());
+      put(SyncDistributionListsMigrationJob.KEY,     new SyncDistributionListsMigrationJob.Factory());
       put(PinOptOutMigration.KEY,                    new PinOptOutMigration.Factory());
       put(PinReminderMigrationJob.KEY,               new PinReminderMigrationJob.Factory());
       put(PniAccountInitializationMigrationJob.KEY,  new PniAccountInitializationMigrationJob.Factory());
@@ -237,6 +238,8 @@ public final class JobManagerFactories {
       put("StorageSyncJob",                          new StorageSyncJob.Factory());
       put("WakeGroupV2Job",                          new FailingJob.Factory());
       put("LeaveGroupJob",                           new FailingJob.Factory());
+      put("PushGroupUpdateJob",                      new FailingJob.Factory());
+      put("RequestGroupInfoJob",                     new FailingJob.Factory());
     }};
   }
 

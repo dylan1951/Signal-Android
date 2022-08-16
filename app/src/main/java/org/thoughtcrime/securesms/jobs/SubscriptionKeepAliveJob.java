@@ -29,14 +29,18 @@ public class SubscriptionKeepAliveJob extends BaseJob {
   private static final String TAG         = Log.tag(SubscriptionKeepAliveJob.class);
   private static final long   JOB_TIMEOUT = TimeUnit.DAYS.toMillis(3);
 
-  public static void launchSubscriberIdKeepAliveJobIfNecessary() {
+  public static void enqueueAndTrackTimeIfNecessary() {
     long nextLaunchTime = SignalStore.donationsValues().getLastKeepAliveLaunchTime() + TimeUnit.DAYS.toMillis(3);
     long now            = System.currentTimeMillis();
 
     if (nextLaunchTime <= now) {
-      ApplicationDependencies.getJobManager().add(new SubscriptionKeepAliveJob());
-      SignalStore.donationsValues().setLastKeepAliveLaunchTime(now);
+      enqueueAndTrackTime(now);
     }
+  }
+
+  public static void enqueueAndTrackTime(long now) {
+    ApplicationDependencies.getJobManager().add(new SubscriptionKeepAliveJob());
+    SignalStore.donationsValues().setLastKeepAliveLaunchTime(now);
   }
 
   private SubscriptionKeepAliveJob() {
@@ -70,21 +74,25 @@ public class SubscriptionKeepAliveJob extends BaseJob {
 
   @Override
   protected void onRun() throws Exception {
+    synchronized (SubscriptionReceiptRequestResponseJob.MUTEX) {
+      doRun();
+    }
+  }
+
+  private void doRun() throws Exception {
     Subscriber subscriber = SignalStore.donationsValues().getSubscriber();
     if (subscriber == null) {
       return;
     }
 
     ServiceResponse<EmptyResponse> response = ApplicationDependencies.getDonationsService()
-                                                                     .putSubscription(subscriber.getSubscriberId())
-                                                                     .blockingGet();
+                                                                     .putSubscription(subscriber.getSubscriberId());
 
     verifyResponse(response);
     Log.i(TAG, "Successful call to PUT subscription ID", true);
 
     ServiceResponse<ActiveSubscription> activeSubscriptionResponse = ApplicationDependencies.getDonationsService()
-                                                                                            .getSubscription(subscriber.getSubscriberId())
-                                                                                            .blockingGet();
+                                                                                            .getSubscription(subscriber.getSubscriberId());
 
     verifyResponse(activeSubscriptionResponse);
     Log.i(TAG, "Successful call to GET active subscription", true);

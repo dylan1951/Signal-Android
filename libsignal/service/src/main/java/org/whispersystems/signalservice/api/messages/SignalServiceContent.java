@@ -594,15 +594,8 @@ public final class SignalServiceContent {
                                                                      SignalServiceProtos.DataMessage content)
       throws UnsupportedDataMessageException, InvalidMessageStructureException
   {
-    SignalServiceGroupV2                groupInfoV2  = createGroupV2Info(content);
-    Optional<SignalServiceGroupContext> groupContext;
-
-    try {
-      groupContext = SignalServiceGroupContext.createOptional(null, groupInfoV2);
-    } catch (InvalidMessageException e) {
-      throw new InvalidMessageStructureException(e);
-    }
-
+    SignalServiceGroupV2           groupInfoV2  = createGroupV2Info(content);
+    Optional<SignalServiceGroupV2> groupContext = Optional.ofNullable(groupInfoV2);
 
     List<SignalServiceAttachment>            attachments      = new LinkedList<>();
     boolean                                  endSession       = ((content.getFlags() & SignalServiceProtos.DataMessage.Flags.END_SESSION_VALUE            ) != 0);
@@ -649,7 +642,6 @@ public final class SignalServiceContent {
     }
 
     return new SignalServiceDataMessage(metadata.getTimestamp(),
-                                        null,
                                         groupInfoV2,
                                         attachments,
                                         content.hasBody() ? content.getBody() : null,
@@ -677,12 +669,12 @@ public final class SignalServiceContent {
       throws ProtocolInvalidKeyException, UnsupportedDataMessageException, InvalidMessageStructureException
   {
     if (content.hasSent()) {
-      Map<SignalServiceAddress, Boolean>      unidentifiedStatuses = new HashMap<>();
+      Map<ServiceId, Boolean>                 unidentifiedStatuses = new HashMap<>();
       SignalServiceProtos.SyncMessage.Sent    sentContent          = content.getSent();
       Optional<SignalServiceDataMessage>      dataMessage          = sentContent.hasMessage() ? Optional.of(createSignalServiceMessage(metadata, sentContent.getMessage())) : Optional.empty();
       Optional<SignalServiceStoryMessage>     storyMessage         = sentContent.hasStoryMessage() ? Optional.of(createStoryMessage(sentContent.getStoryMessage())) : Optional.empty();
       Optional<SignalServiceAddress>          address              = SignalServiceAddress.isValidAddress(sentContent.getDestinationUuid())
-                                                                     ? Optional.of(new SignalServiceAddress(ServiceId.parseOrThrow(sentContent.getDestinationUuid())))
+                                                                     ? Optional.of(new SignalServiceAddress(ServiceId.parseOrThrow(sentContent.getDestinationUuid()), sentContent.getDestinationE164()))
                                                                      : Optional.empty();
       Set<SignalServiceStoryMessageRecipient> recipientManifest    = sentContent.getStoryMessageRecipientsList()
                                                                                 .stream()
@@ -697,8 +689,7 @@ public final class SignalServiceContent {
 
       for (SignalServiceProtos.SyncMessage.Sent.UnidentifiedDeliveryStatus status : sentContent.getUnidentifiedStatusList()) {
         if (SignalServiceAddress.isValidAddress(status.getDestinationUuid(), null)) {
-          SignalServiceAddress recipient = new SignalServiceAddress(ServiceId.parseOrThrow(status.getDestinationUuid()));
-          unidentifiedStatuses.put(recipient, status.getUnidentified());
+          unidentifiedStatuses.put(ServiceId.parseOrNull(status.getDestinationUuid()), status.getUnidentified());
         } else {
           Log.w(TAG, "Encountered an invalid UnidentifiedDeliveryStatus in a SentTranscript! Ignoring.");
         }
@@ -722,9 +713,9 @@ public final class SignalServiceContent {
       List<ReadMessage> readMessages = new LinkedList<>();
 
       for (SignalServiceProtos.SyncMessage.Read read : content.getReadList()) {
-        if (SignalServiceAddress.isValidAddress(read.getSenderUuid())) {
-          SignalServiceAddress address = new SignalServiceAddress(ServiceId.parseOrThrow(read.getSenderUuid()));
-          readMessages.add(new ReadMessage(address, read.getTimestamp()));
+        ServiceId serviceId = ServiceId.parseOrNull(read.getSenderUuid());
+        if (serviceId != null) {
+          readMessages.add(new ReadMessage(serviceId, read.getTimestamp()));
         } else {
           Log.w(TAG, "Encountered an invalid ReadMessage! Ignoring.");
         }
@@ -737,9 +728,9 @@ public final class SignalServiceContent {
       List<ViewedMessage> viewedMessages = new LinkedList<>();
 
       for (SignalServiceProtos.SyncMessage.Viewed viewed : content.getViewedList()) {
-        if (SignalServiceAddress.isValidAddress(viewed.getSenderUuid())) {
-          SignalServiceAddress address = new SignalServiceAddress(ServiceId.parseOrThrow(viewed.getSenderUuid()));
-          viewedMessages.add(new ViewedMessage(address, viewed.getTimestamp()));
+        ServiceId serviceId = ServiceId.parseOrNull(viewed.getSenderUuid());
+        if (serviceId != null) {
+          viewedMessages.add(new ViewedMessage(serviceId, viewed.getTimestamp()));
         } else {
           Log.w(TAG, "Encountered an invalid ReadMessage! Ignoring.");
         }
@@ -749,9 +740,9 @@ public final class SignalServiceContent {
     }
 
     if (content.hasViewOnceOpen()) {
-      if (SignalServiceAddress.isValidAddress(content.getViewOnceOpen().getSenderUuid())) {
-        SignalServiceAddress address   = new SignalServiceAddress(ServiceId.parseOrThrow(content.getViewOnceOpen().getSenderUuid()));
-        ViewOnceOpenMessage  timerRead = new ViewOnceOpenMessage(address, content.getViewOnceOpen().getTimestamp());
+      ServiceId serviceId = ServiceId.parseOrNull(content.getViewOnceOpen().getSenderUuid());
+      if (serviceId != null) {
+        ViewOnceOpenMessage timerRead = new ViewOnceOpenMessage(serviceId, content.getViewOnceOpen().getTimestamp());
         return SignalServiceSyncMessage.forViewOnceOpen(timerRead);
       } else {
         throw new InvalidMessageStructureException("ViewOnceOpen message has no sender!");
@@ -874,10 +865,9 @@ public final class SignalServiceContent {
       if (content.getMessageRequestResponse().hasGroupId()) {
         responseMessage = MessageRequestResponseMessage.forGroup(content.getMessageRequestResponse().getGroupId().toByteArray(), type);
       } else {
-        Optional<SignalServiceAddress> address = SignalServiceAddress.fromRaw(content.getMessageRequestResponse().getThreadUuid(), null);
-
-        if (address.isPresent()) {
-          responseMessage = MessageRequestResponseMessage.forIndividual(address.get(), type);
+        ServiceId serviceId = ServiceId.parseOrNull(content.getMessageRequestResponse().getThreadUuid());
+        if (serviceId != null) {
+          responseMessage = MessageRequestResponseMessage.forIndividual(serviceId, type);
         } else {
           throw new InvalidMessageStructureException("Message request response has an invalid thread identifier!");
         }
@@ -894,7 +884,7 @@ public final class SignalServiceContent {
           Money.MobileCoin                                           amount     = Money.picoMobileCoin(mobileCoin.getAmountPicoMob());
           Money.MobileCoin                                           fee        = Money.picoMobileCoin(mobileCoin.getFeePicoMob());
           ByteString                                                 address    = mobileCoin.getRecipientAddress();
-          Optional<SignalServiceAddress>                             recipient  = SignalServiceAddress.fromRaw(outgoingPayment.getRecipientUuid(), null);
+          Optional<ServiceId>                                        recipient  = Optional.ofNullable(ServiceId.parseOrNull(outgoingPayment.getRecipientUuid()));
 
           return SignalServiceSyncMessage.forOutgoingPayment(new OutgoingPaymentMessage(recipient,
                                                                                         amount,
@@ -1034,11 +1024,10 @@ public final class SignalServiceContent {
                                                                           attachment.hasThumbnail() ? createAttachmentPointer(attachment.getThumbnail()) : null));
     }
 
-    if (SignalServiceAddress.isValidAddress(content.getQuote().getAuthorUuid())) {
-      SignalServiceAddress address = new SignalServiceAddress(ServiceId.parseOrThrow(content.getQuote().getAuthorUuid()));
-
+    ServiceId author = ServiceId.parseOrNull(content.getQuote().getAuthorUuid());
+    if (author != null) {
       return new SignalServiceDataMessage.Quote(content.getQuote().getId(),
-                                                address,
+                                                author,
                                                 content.getQuote().getText(),
                                                 attachments,
                                                 createMentions(content.getQuote().getBodyRangesList(), content.getQuote().getText(), isGroupV2),
@@ -1139,7 +1128,7 @@ public final class SignalServiceContent {
 
     return new SignalServiceDataMessage.Reaction(reaction.getEmoji(),
                                                  reaction.getRemove(),
-                                                 new SignalServiceAddress(serviceId),
+                                                 serviceId,
                                                  reaction.getTargetSentTimestamp());
   }
 

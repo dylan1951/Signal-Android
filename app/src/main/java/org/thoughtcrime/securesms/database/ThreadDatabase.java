@@ -25,12 +25,15 @@ import android.net.Uri;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.arch.core.util.Function;
 
 import com.annimon.stream.Collectors;
 import com.annimon.stream.Stream;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 import org.jsoup.helper.StringUtil;
+import org.signal.core.util.CursorUtil;
+import org.signal.core.util.SqlUtil;
 import org.signal.core.util.logging.Log;
 import org.signal.libsignal.zkgroup.InvalidInputException;
 import org.signal.libsignal.zkgroup.groups.GroupMasterKey;
@@ -46,15 +49,14 @@ import org.thoughtcrime.securesms.keyvalue.SignalStore;
 import org.thoughtcrime.securesms.mms.Slide;
 import org.thoughtcrime.securesms.mms.SlideDeck;
 import org.thoughtcrime.securesms.mms.StickerSlide;
+import org.thoughtcrime.securesms.notifications.v2.ConversationId;
 import org.thoughtcrime.securesms.recipients.Recipient;
 import org.thoughtcrime.securesms.recipients.RecipientDetails;
 import org.thoughtcrime.securesms.recipients.RecipientId;
 import org.thoughtcrime.securesms.recipients.RecipientUtil;
 import org.thoughtcrime.securesms.storage.StorageSyncHelper;
 import org.thoughtcrime.securesms.util.ConversationUtil;
-import org.signal.core.util.CursorUtil;
 import org.thoughtcrime.securesms.util.JsonUtils;
-import org.signal.core.util.SqlUtil;
 import org.thoughtcrime.securesms.util.TextSecurePreferences;
 import org.thoughtcrime.securesms.util.Util;
 import org.whispersystems.signalservice.api.push.ServiceId;
@@ -402,12 +404,32 @@ public class ThreadDatabase extends Database {
     return setReadSince(Collections.singletonMap(threadId, -1L), lastSeen);
   }
 
+  public List<MarkedMessageInfo> setRead(@NonNull ConversationId conversationId, boolean lastSeen) {
+    if (conversationId.getGroupStoryId() == null) {
+      return setRead(conversationId.getThreadId(), lastSeen);
+    } else {
+      return setGroupStoryReadSince(conversationId.getThreadId(), conversationId.getGroupStoryId(), System.currentTimeMillis());
+    }
+  }
+
+  public List<MarkedMessageInfo> setReadSince(@NonNull ConversationId conversationId, boolean lastSeen, long sinceTimestamp) {
+    if (conversationId.getGroupStoryId() != null) {
+      return setGroupStoryReadSince(conversationId.getThreadId(), conversationId.getGroupStoryId(), sinceTimestamp);
+    } else {
+      return setReadSince(conversationId.getThreadId(), lastSeen, sinceTimestamp);
+    }
+  }
+
   public List<MarkedMessageInfo> setReadSince(long threadId, boolean lastSeen, long sinceTimestamp) {
     return setReadSince(Collections.singletonMap(threadId, sinceTimestamp), lastSeen);
   }
 
   public List<MarkedMessageInfo> setRead(Collection<Long> threadIds, boolean lastSeen) {
     return setReadSince(Stream.of(threadIds).collect(Collectors.toMap(t -> t, t -> -1L)), lastSeen);
+  }
+
+  public List<MarkedMessageInfo> setGroupStoryReadSince(long threadId, long groupStoryId, long sinceTimestamp) {
+    return SignalDatabase.mms().setGroupStoryMessagesReadSince(threadId, groupStoryId, sinceTimestamp);
   }
 
   public List<MarkedMessageInfo> setReadSince(Map<Long, Long> threadIdToSinceTimestamp, boolean lastSeen) {
@@ -495,17 +517,33 @@ public class ThreadDatabase extends Database {
     }
   }
 
-  public long getUnreadThreadCount() {
-    SQLiteDatabase db         = databaseHelper.getSignalReadableDatabase();
-    String[]       projection = SqlUtil.buildArgs("COUNT(*)");
-    String         where      = READ + " != 1";
+  public @NonNull Long getUnreadThreadCount() {
+    return getUnreadThreadIdAggregate(SqlUtil.COUNT, cursor -> CursorUtil.getAggregateOrDefault(cursor, 0L, cursor::getLong));
+  }
 
-    try (Cursor cursor = db.query(TABLE_NAME, projection, where, null, null, null, null)) {
-      if (cursor != null && cursor.moveToFirst()) {
-        return cursor.getLong(0);
+  public long getUnreadMessageCount(long threadId) {
+    SQLiteDatabase db = databaseHelper.getSignalReadableDatabase();
+
+    try (Cursor cursor = db.query(TABLE_NAME, SqlUtil.buildArgs(UNREAD_COUNT), ID_WHERE, SqlUtil.buildArgs(threadId), null, null, null)) {
+      if (cursor.moveToFirst()) {
+        return CursorUtil.requireLong(cursor, UNREAD_COUNT);
       } else {
-        return 0;
+        return 0L;
       }
+    }
+  }
+
+  public @Nullable String getUnreadThreadIdList() {
+    return getUnreadThreadIdAggregate(SqlUtil.buildArgs("GROUP_CONCAT(" + ID + ")"),
+                                      cursor -> CursorUtil.getAggregateOrDefault(cursor, null, cursor::getString));
+  }
+
+  private @NonNull <T> T getUnreadThreadIdAggregate(@NonNull String[] aggregator, @NonNull Function<Cursor, T> mapCursorToType) {
+    SQLiteDatabase db    = databaseHelper.getSignalReadableDatabase();
+    String         where = READ + " != " + ReadStatus.READ.serialize() + " AND " + ARCHIVED + " = 0 AND " + MEANINGFUL_MESSAGES + " != 0";
+
+    try (Cursor cursor = db.query(TABLE_NAME, aggregator, where, null, null, null, null)) {
+      return mapCursorToType.apply(cursor);
     }
   }
 
@@ -573,10 +611,10 @@ public class ThreadDatabase extends Database {
   }
 
   public Cursor getRecentConversationList(int limit, boolean includeInactiveGroups, boolean hideV1Groups) {
-    return getRecentConversationList(limit, includeInactiveGroups, false, false, hideV1Groups, false);
+    return getRecentConversationList(limit, includeInactiveGroups, false, false, hideV1Groups, false, false);
   }
 
-  public Cursor getRecentConversationList(int limit, boolean includeInactiveGroups, boolean individualsOnly, boolean groupsOnly, boolean hideV1Groups, boolean hideSms) {
+  public Cursor getRecentConversationList(int limit, boolean includeInactiveGroups, boolean individualsOnly, boolean groupsOnly, boolean hideV1Groups, boolean hideSms, boolean hideSelf) {
     SQLiteDatabase db    = databaseHelper.getSignalReadableDatabase();
     String         query = !includeInactiveGroups ? MEANINGFUL_MESSAGES + " != 0 AND (" + GroupDatabase.TABLE_NAME + "." + GroupDatabase.ACTIVE + " IS NULL OR " + GroupDatabase.TABLE_NAME + "." + GroupDatabase.ACTIVE + " = 1)"
                                                   : MEANINGFUL_MESSAGES + " != 0";
@@ -599,7 +637,12 @@ public class ThreadDatabase extends Database {
       query += " AND " + RecipientDatabase.TABLE_NAME + "." + RecipientDatabase.FORCE_SMS_SELECTION + " = 0";
     }
 
+    if (hideSelf) {
+      query += " AND " + RECIPIENT_ID + " != " + Recipient.self().getId().toLong();
+    }
+
     query += " AND " + ARCHIVED + " = 0";
+    query += " AND " + RecipientDatabase.TABLE_NAME + "." + RecipientDatabase.BLOCKED + " = 0";
 
     if (SignalStore.releaseChannelValues().getReleaseChannelRecipientId() != null) {
       query += " AND " + RECIPIENT_ID + " != " + SignalStore.releaseChannelValues().getReleaseChannelRecipientId().toLong();
@@ -739,7 +782,8 @@ public class ThreadDatabase extends Database {
   public Cursor getUnarchivedConversationList(boolean pinned, long offset, long limit) {
     SQLiteDatabase db          = databaseHelper.getSignalReadableDatabase();
     String         pinnedWhere = PINNED + (pinned ? " != 0" : " = 0");
-    String         where       = ARCHIVED + " = 0 AND " + MEANINGFUL_MESSAGES + " != 0 AND " + pinnedWhere;
+    String         meaningful  = pinned ? "" : MEANINGFUL_MESSAGES + " != 0 AND ";
+    String         where       = ARCHIVED + " = 0 AND " + meaningful + pinnedWhere;
 
     final String query;
 
@@ -780,7 +824,7 @@ public class ThreadDatabase extends Database {
   public int getPinnedConversationListCount() {
     SQLiteDatabase db      = databaseHelper.getSignalReadableDatabase();
     String[]       columns = new String[] { "COUNT(*)" };
-    String         query   = ARCHIVED + " = 0 AND " + PINNED + " != 0 AND " + MEANINGFUL_MESSAGES + " != 0";
+    String         query   = ARCHIVED + " = 0 AND " + PINNED + " != 0";
 
     try (Cursor cursor = db.query(TABLE_NAME, columns, query, null, null, null, null)) {
       if (cursor != null && cursor.moveToFirst()) {
@@ -794,7 +838,7 @@ public class ThreadDatabase extends Database {
   public int getUnarchivedConversationListCount() {
     SQLiteDatabase db      = databaseHelper.getSignalReadableDatabase();
     String[]       columns = new String[] { "COUNT(*)" };
-    String         query   = ARCHIVED + " = 0 AND " + MEANINGFUL_MESSAGES + " != 0";
+    String         query   = ARCHIVED + " = 0 AND (" + MEANINGFUL_MESSAGES + " != 0 OR " + PINNED + " != 0)";
 
     try (Cursor cursor = db.query(TABLE_NAME, columns, query, null, null, null, null)) {
       if (cursor != null && cursor.moveToFirst()) {
@@ -1127,7 +1171,6 @@ public class ThreadDatabase extends Database {
     SQLiteDatabase db = databaseHelper.getSignalReadableDatabase();
 
     try (Cursor cursor = db.query(TABLE_NAME, RECIPIENT_ID_PROJECTION, ID_WHERE, SqlUtil.buildArgs(threadId), null, null, null)) {
-
       if (cursor != null && cursor.moveToFirst()) {
         return RecipientId.from(cursor.getLong(cursor.getColumnIndexOrThrow(RECIPIENT_ID)));
       }
@@ -1229,14 +1272,14 @@ public class ThreadDatabase extends Database {
           pinnedRecipient = Recipient.externalPush(pinned.getContact().get());
         } else if (pinned.getGroupV1Id().isPresent()) {
           try {
-            pinnedRecipient = Recipient.externalGroupExact(context, GroupId.v1(pinned.getGroupV1Id().get()));
+            pinnedRecipient = Recipient.externalGroupExact(GroupId.v1(pinned.getGroupV1Id().get()));
           } catch (BadGroupIdException e) {
             Log.w(TAG, "Failed to parse pinned groupV1 ID!", e);
             pinnedRecipient = null;
           }
         } else if (pinned.getGroupV2MasterKey().isPresent()) {
           try {
-            pinnedRecipient = Recipient.externalGroupExact(context, GroupId.v2(new GroupMasterKey(pinned.getGroupV2MasterKey().get())));
+            pinnedRecipient = Recipient.externalGroupExact(GroupId.v2(new GroupMasterKey(pinned.getGroupV2MasterKey().get())));
           } catch (InvalidInputException e) {
             Log.w(TAG, "Failed to parse pinned groupV2 master key!", e);
             pinnedRecipient = null;
@@ -1252,7 +1295,7 @@ public class ThreadDatabase extends Database {
 
         pinnedPosition++;
       }
-      
+
       db.setTransactionSuccessful();
     } finally {
       db.endTransaction();
@@ -1319,6 +1362,11 @@ public class ThreadDatabase extends Database {
       if (shouldDelete) {
         deleteConversation(threadId);
       }
+
+      if (isPinned) {
+        updateThread(threadId, meaningfulMessages, null, null, null, null, 0, 0, 0, 0, unarchive, 0, 0);
+      }
+
       return true;
     }
 
@@ -1494,7 +1542,7 @@ public class ThreadDatabase extends Database {
         if (threadRecipient.isPushV2Group()) {
           MessageRecord.InviteAddState inviteAddState = record.getGv2AddInviteState();
           if (inviteAddState != null) {
-            RecipientId from = RecipientId.from(ServiceId.from(inviteAddState.getAddedOrInvitedBy()), null);
+            RecipientId from = RecipientId.from(ServiceId.from(inviteAddState.getAddedOrInvitedBy()));
             if (inviteAddState.isInvited()) {
               Log.i(TAG, "GV2 invite message request from " + from);
               return Extra.forGroupV2invite(from, individualRecipientId);

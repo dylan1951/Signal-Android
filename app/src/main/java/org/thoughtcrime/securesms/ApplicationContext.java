@@ -18,10 +18,10 @@ package org.thoughtcrime.securesms;
 
 import android.content.Context;
 import android.os.Build;
-import android.os.StrictMode;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.annotation.VisibleForTesting;
 import androidx.annotation.WorkerThread;
 import androidx.appcompat.app.AppCompatDelegate;
 import androidx.multidex.MultiDexApplication;
@@ -62,6 +62,7 @@ import org.thoughtcrime.securesms.jobs.PushNotificationReceiveJob;
 import org.thoughtcrime.securesms.jobs.RefreshPreKeysJob;
 import org.thoughtcrime.securesms.jobs.RetrieveProfileJob;
 import org.thoughtcrime.securesms.jobs.RetrieveRemoteAnnouncementsJob;
+import org.thoughtcrime.securesms.jobs.StoryOnboardingDownloadJob;
 import org.thoughtcrime.securesms.jobs.SubscriptionKeepAliveJob;
 import org.thoughtcrime.securesms.keyvalue.SignalStore;
 import org.thoughtcrime.securesms.logging.CustomSignalProtocolLogger;
@@ -87,7 +88,6 @@ import org.thoughtcrime.securesms.storage.StorageSyncHelper;
 import org.thoughtcrime.securesms.util.AppForegroundObserver;
 import org.thoughtcrime.securesms.util.AppStartup;
 import org.thoughtcrime.securesms.util.DynamicTheme;
-import org.thoughtcrime.securesms.util.Environment;
 import org.thoughtcrime.securesms.util.FeatureFlags;
 import org.thoughtcrime.securesms.util.SignalLocalMetrics;
 import org.thoughtcrime.securesms.util.SignalUncaughtExceptionHandler;
@@ -99,7 +99,6 @@ import org.thoughtcrime.securesms.util.dynamiclanguage.DynamicLanguageContextWra
 import java.net.SocketException;
 import java.net.SocketTimeoutException;
 import java.security.Security;
-import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 
 import io.reactivex.rxjava3.exceptions.OnErrorNotImplementedException;
@@ -206,6 +205,7 @@ public class ApplicationContext extends MultiDexApplication implements AppForegr
                             .addPostRender(() -> ApplicationDependencies.getJobManager().add(new FontDownloaderJob()))
                             .addPostRender(CheckServiceReachabilityJob::enqueueIfNecessary)
                             .addPostRender(GroupV2UpdateSelfProfileKeyJob::enqueueForGroupsIfNecessary)
+                            .addPostRender(StoryOnboardingDownloadJob.Companion::enqueueIfNeeded)
                             .execute();
 
     Log.d(TAG, "onCreate() took " + (System.currentTimeMillis() - startTime) + " ms");
@@ -221,7 +221,7 @@ public class ApplicationContext extends MultiDexApplication implements AppForegr
     ApplicationDependencies.getFrameRateTracker().start();
     ApplicationDependencies.getMegaphoneRepository().onAppForegrounded();
     ApplicationDependencies.getDeadlockDetector().start();
-    SubscriptionKeepAliveJob.launchSubscriberIdKeepAliveJobIfNecessary();
+    SubscriptionKeepAliveJob.enqueueAndTrackTimeIfNecessary();
 
     SignalExecutors.BOUNDED.execute(() -> {
       FeatureFlags.refreshIfNecessary();
@@ -231,6 +231,16 @@ public class ApplicationContext extends MultiDexApplication implements AppForegr
       KeyCachingService.onAppForegrounded(this);
       ApplicationDependencies.getShakeToReport().enable();
       checkBuildExpiration();
+
+      long lastForegroundTime = SignalStore.misc().getLastForegroundTime();
+      long currentTime        = System.currentTimeMillis();
+      long timeDiff           = currentTime - lastForegroundTime;
+
+      if (timeDiff < 0) {
+        Log.w(TAG, "Time travel! The system clock has moved backwards. (currentTime: " + currentTime + " ms, lastForegroundTime: " + lastForegroundTime + " ms, diff: " + timeDiff + " ms)");
+      }
+
+      SignalStore.misc().setLastForegroundTime(currentTime);
     });
 
     Log.d(TAG, "onStart() took " + (System.currentTimeMillis() - startTime) + " ms");
@@ -330,7 +340,8 @@ public class ApplicationContext extends MultiDexApplication implements AppForegr
     ApplicationDependencies.getIncomingMessageObserver();
   }
 
-  private void initializeAppDependencies() {
+  @VisibleForTesting
+  void initializeAppDependencies() {
     ApplicationDependencies.init(this, new ApplicationDependencyProvider(this));
   }
 

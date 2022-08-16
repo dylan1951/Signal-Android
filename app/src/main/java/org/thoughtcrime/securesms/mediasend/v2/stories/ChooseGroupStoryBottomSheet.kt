@@ -62,22 +62,24 @@ class ChooseGroupStoryBottomSheet : FixedRoundedCornerBottomSheetDialogFragment(
 
     val contactRecycler: RecyclerView = view.findViewById(R.id.contact_recycler)
     mediator = ContactSearchMediator(
-      this,
-      contactRecycler,
-      FeatureFlags.shareSelectionLimit(),
-      true
-    ) { state ->
-      ContactSearchConfiguration.build {
-        query = state.query
+      fragment = this,
+      recyclerView = contactRecycler,
+      selectionLimits = FeatureFlags.shareSelectionLimit(),
+      displayCheckBox = true,
+      mapStateToConfiguration = { state ->
+        ContactSearchConfiguration.build {
+          query = state.query
 
-        addSection(
-          ContactSearchConfiguration.Section.Groups(
-            includeHeader = false,
-            returnAsGroupStories = true
+          addSection(
+            ContactSearchConfiguration.Section.Groups(
+              includeHeader = false,
+              returnAsGroupStories = true
+            )
           )
-        )
-      }
-    }
+        }
+      },
+      performSafetyNumberChecks = false
+    )
 
     mediator.getSelectionState().observe(viewLifecycleOwner) { state ->
       adapter.submitList(

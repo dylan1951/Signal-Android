@@ -12,6 +12,7 @@ import org.signal.libsignal.protocol.IdentityKeyPair;
 import org.signal.libsignal.protocol.InvalidKeyException;
 import org.signal.libsignal.protocol.util.Pair;
 import org.signal.libsignal.zkgroup.InvalidInputException;
+import org.signal.libsignal.zkgroup.profiles.ExpiringProfileKeyCredential;
 import org.signal.libsignal.zkgroup.profiles.ProfileKey;
 import org.thoughtcrime.securesms.badges.models.Badge;
 import org.thoughtcrime.securesms.crypto.ProfileKeyUtil;
@@ -102,28 +103,23 @@ public final class ProfileUtil {
                                                                   boolean allowUnidentifiedAccess)
       throws IOException
   {
-    ProfileService profileService = new ProfileService(ApplicationDependencies.getGroupsV2Operations().getProfileOperations(),
-                                                       ApplicationDependencies.getSignalServiceMessageReceiver(),
-                                                       ApplicationDependencies.getSignalWebSocket());
-
-    Pair<Recipient, ServiceResponse<ProfileAndCredential>> response = retrieveProfile(context, recipient, requestType, profileService, allowUnidentifiedAccess).blockingGet();
+    Pair<Recipient, ServiceResponse<ProfileAndCredential>> response = retrieveProfile(context, recipient, requestType, allowUnidentifiedAccess).blockingGet();
     return new ProfileService.ProfileResponseProcessor(response.second()).getResultOrThrow();
   }
 
   public static Single<Pair<Recipient, ServiceResponse<ProfileAndCredential>>> retrieveProfile(@NonNull Context context,
                                                                                                @NonNull Recipient recipient,
-                                                                                               @NonNull SignalServiceProfile.RequestType requestType,
-                                                                                               @NonNull ProfileService profileService)
+                                                                                               @NonNull SignalServiceProfile.RequestType requestType)
   {
-    return retrieveProfile(context, recipient, requestType, profileService, true);
+    return retrieveProfile(context, recipient, requestType, true);
   }
 
   private static Single<Pair<Recipient, ServiceResponse<ProfileAndCredential>>> retrieveProfile(@NonNull Context context,
                                                                                                 @NonNull Recipient recipient,
                                                                                                 @NonNull SignalServiceProfile.RequestType requestType,
-                                                                                                @NonNull ProfileService profileService,
                                                                                                 boolean allowUnidentifiedAccess)
   {
+    ProfileService               profileService     = ApplicationDependencies.getProfileService();
     Optional<UnidentifiedAccess> unidentifiedAccess = allowUnidentifiedAccess ? getUnidentifiedAccess(context, recipient) : Optional.empty();
     Optional<ProfileKey>         profileKey         = ProfileKeyUtil.profileKeyOptional(recipient.getProfileKey());
 
@@ -285,6 +281,35 @@ public final class ProfileUtil {
                   getSelfPaymentsAddressProtobuf(),
                   AvatarUploadParams.forAvatar(avatar),
                   Recipient.self().getBadges());
+  }
+
+  /**
+   * Attempts to update just the expiring profile key credential with a new one. If unable, an empty optional is returned.
+   *
+   * Note: It will try to find missing profile key credentials from the server and persist locally.
+   */
+  public static Optional<ExpiringProfileKeyCredential> updateExpiringProfileKeyCredential(@NonNull Recipient recipient) throws IOException {
+    ProfileKey profileKey = ProfileKeyUtil.profileKeyOrNull(recipient.getProfileKey());
+
+    if (profileKey != null) {
+      Log.i(TAG, String.format("Updating profile key credential on recipient %s, fetching", recipient.getId()));
+
+      Optional<ExpiringProfileKeyCredential> profileKeyCredentialOptional = ApplicationDependencies.getSignalServiceAccountManager()
+                                                                                                   .resolveProfileKeyCredential(recipient.requireServiceId(), profileKey, Locale.getDefault());
+
+      if (profileKeyCredentialOptional.isPresent()) {
+        boolean updatedProfileKey = SignalDatabase.recipients().setProfileKeyCredential(recipient.getId(), profileKey, profileKeyCredentialOptional.get());
+
+        if (!updatedProfileKey) {
+          Log.w(TAG, String.format("Failed to update the profile key credential on recipient %s", recipient.getId()));
+        } else {
+          Log.i(TAG, String.format("Got new profile key credential for recipient %s", recipient.getId()));
+          return profileKeyCredentialOptional;
+        }
+      }
+    }
+
+    return Optional.empty();
   }
 
   private static void uploadProfile(@NonNull ProfileName profileName,

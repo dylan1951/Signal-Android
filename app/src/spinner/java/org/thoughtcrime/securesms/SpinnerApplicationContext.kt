@@ -17,6 +17,7 @@ import org.thoughtcrime.securesms.database.LocalMetricsDatabase
 import org.thoughtcrime.securesms.database.LogDatabase
 import org.thoughtcrime.securesms.database.MegaphoneDatabase
 import org.thoughtcrime.securesms.database.MessageBitmaskColumnTransformer
+import org.thoughtcrime.securesms.database.ProfileKeyCredentialTransformer
 import org.thoughtcrime.securesms.database.QueryMonitor
 import org.thoughtcrime.securesms.database.SignalDatabase
 import org.thoughtcrime.securesms.database.TimestampTransformer
@@ -39,11 +40,19 @@ class SpinnerApplicationContext : ApplicationContext() {
         .build()
     )
 
+    try {
+      Class.forName("dalvik.system.CloseGuard")
+        .getMethod("setEnabled", Boolean::class.javaPrimitiveType)
+        .invoke(null, true)
+    } catch (e: ReflectiveOperationException) {
+      throw RuntimeException(e)
+    }
+
     Spinner.init(
       this,
       mapOf(
         "Device" to "${Build.MODEL} (Android ${Build.VERSION.RELEASE}, API ${Build.VERSION.SDK_INT})",
-        "Package" to "$packageName (${AppSignatureUtil.getAppSignature(this).orElse("Unknown")})",
+        "Package" to "$packageName (${AppSignatureUtil.getAppSignature(this)})",
         "App Version" to "${BuildConfig.VERSION_NAME} (${BuildConfig.CANONICAL_VERSION_CODE}, ${BuildConfig.GIT_HASH})",
         "Profile Name" to (if (SignalStore.account().isRegistered) Recipient.self().profileName.toString() else "none"),
         "E164" to (SignalStore.account().e164 ?: "none"),
@@ -54,13 +63,16 @@ class SpinnerApplicationContext : ApplicationContext() {
       linkedMapOf(
         "signal" to DatabaseConfig(
           db = SignalDatabase.rawDatabase,
-          columnTransformers = listOf(MessageBitmaskColumnTransformer, GV2Transformer, GV2UpdateTransformer, IsStoryTransformer, TimestampTransformer)
+          columnTransformers = listOf(MessageBitmaskColumnTransformer, GV2Transformer, GV2UpdateTransformer, IsStoryTransformer, TimestampTransformer, ProfileKeyCredentialTransformer)
         ),
         "jobmanager" to DatabaseConfig(db = JobDatabase.getInstance(this).sqlCipherDatabase),
         "keyvalue" to DatabaseConfig(db = KeyValueDatabase.getInstance(this).sqlCipherDatabase),
         "megaphones" to DatabaseConfig(db = MegaphoneDatabase.getInstance(this).sqlCipherDatabase),
         "localmetrics" to DatabaseConfig(db = LocalMetricsDatabase.getInstance(this).sqlCipherDatabase),
         "logs" to DatabaseConfig(db = LogDatabase.getInstance(this).sqlCipherDatabase),
+      ),
+      linkedMapOf(
+        StorageServicePlugin.PATH to StorageServicePlugin()
       )
     )
 

@@ -5,6 +5,7 @@ import android.content.res.TypedArray;
 import android.graphics.Bitmap;
 import android.graphics.PorterDuff;
 import android.graphics.PorterDuffColorFilter;
+import android.graphics.drawable.Drawable;
 import android.net.Uri;
 import android.os.Build;
 import android.util.AttributeSet;
@@ -14,6 +15,8 @@ import android.widget.FrameLayout;
 import android.widget.ImageView;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.annotation.Px;
 import androidx.annotation.UiThread;
 
 import com.bumptech.glide.RequestBuilder;
@@ -155,8 +158,13 @@ public class ThumbnailView extends FrameLayout {
     captionIcon.setScaleY(captionIconScale);
   }
 
-  public void setMinimumThumbnailWidth(int width) {
+  public void setMinimumThumbnailWidth(@Px int width) {
     bounds[MIN_WIDTH] = width;
+    invalidate();
+  }
+
+  public void setMaximumThumbnailHeight(@Px int height) {
+    bounds[MAX_HEIGHT] = height;
     invalidate();
   }
 
@@ -272,6 +280,14 @@ public class ThumbnailView extends FrameLayout {
     bounds[MAX_HEIGHT] = maxHeight;
 
     forceLayout();
+  }
+
+  public void setImageDrawable(@NonNull GlideRequests glideRequests, @Nullable Drawable drawable) {
+    glideRequests.clear(image);
+    glideRequests.clear(blurhash);
+
+    image.setImageDrawable(drawable);
+    blurhash.setImageDrawable(null);
   }
 
   @UiThread

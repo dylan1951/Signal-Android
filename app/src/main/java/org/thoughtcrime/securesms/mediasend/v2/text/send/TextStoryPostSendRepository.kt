@@ -1,32 +1,52 @@
 package org.thoughtcrime.securesms.mediasend.v2.text.send
 
+import android.graphics.Bitmap
+import android.net.Uri
 import io.reactivex.rxjava3.core.Single
+import io.reactivex.rxjava3.schedulers.Schedulers
 import org.signal.core.util.ThreadUtil
+import org.signal.core.util.logging.Log
 import org.thoughtcrime.securesms.contacts.paged.ContactSearchKey
 import org.thoughtcrime.securesms.database.SignalDatabase
 import org.thoughtcrime.securesms.database.ThreadDatabase
 import org.thoughtcrime.securesms.database.model.StoryType
 import org.thoughtcrime.securesms.database.model.databaseprotos.StoryTextPost
 import org.thoughtcrime.securesms.fonts.TextFont
+import org.thoughtcrime.securesms.keyvalue.SignalStore
+import org.thoughtcrime.securesms.keyvalue.StorySend
 import org.thoughtcrime.securesms.linkpreview.LinkPreview
 import org.thoughtcrime.securesms.mediasend.v2.UntrustedRecords
 import org.thoughtcrime.securesms.mediasend.v2.text.TextStoryPostCreationState
 import org.thoughtcrime.securesms.mms.OutgoingMediaMessage
 import org.thoughtcrime.securesms.mms.OutgoingSecureMediaMessage
+import org.thoughtcrime.securesms.providers.BlobProvider
 import org.thoughtcrime.securesms.recipients.Recipient
 import org.thoughtcrime.securesms.stories.Stories
 import org.thoughtcrime.securesms.util.Base64
+import java.io.ByteArrayOutputStream
+
+private val TAG = Log.tag(TextStoryPostSendRepository::class.java)
 
 class TextStoryPostSendRepository {
 
-  fun send(contactSearchKey: Set<ContactSearchKey>, textStoryPostCreationState: TextStoryPostCreationState, linkPreview: LinkPreview?): Single<TextStoryPostSendResult> {
+  fun compressToBlob(bitmap: Bitmap): Single<Uri> {
+    return Single.fromCallable {
+      val outputStream = ByteArrayOutputStream()
+      bitmap.compress(Bitmap.CompressFormat.PNG, 100, outputStream)
+      bitmap.recycle()
+      BlobProvider.getInstance().forData(outputStream.toByteArray()).createForSingleUseInMemory()
+    }.subscribeOn(Schedulers.computation())
+  }
+
+  fun send(contactSearchKey: Set<ContactSearchKey>, textStoryPostCreationState: TextStoryPostCreationState, linkPreview: LinkPreview?, identityChangesSince: Long): Single<TextStoryPostSendResult> {
     return UntrustedRecords
-      .checkForBadIdentityRecords(contactSearchKey.filterIsInstance(ContactSearchKey.RecipientSearchKey::class.java).toSet())
+      .checkForBadIdentityRecords(contactSearchKey.filterIsInstance(ContactSearchKey.RecipientSearchKey::class.java).toSet(), identityChangesSince)
       .toSingleDefault<TextStoryPostSendResult>(TextStoryPostSendResult.Success)
       .onErrorReturn {
         if (it is UntrustedRecords.UntrustedRecordsException) {
           TextStoryPostSendResult.UntrustedRecordsError(it.untrustedRecords)
         } else {
+          Log.w(TAG, "Unexpected error occurred", it)
           TextStoryPostSendResult.Failure
         }
       }
@@ -48,8 +68,12 @@ class TextStoryPostSendRepository {
         val recipient = Recipient.resolved(contact.requireShareContact().recipientId.get())
         val isStory = contact is ContactSearchKey.RecipientSearchKey.Story || recipient.isDistributionList
 
-        if (isStory && recipient.isActiveGroup) {
+        if (isStory && recipient.isActiveGroup && recipient.isGroup) {
           SignalDatabase.groups.markDisplayAsStory(recipient.requireGroupId())
+        }
+
+        if (isStory && !recipient.isMyStory) {
+          SignalStore.storyValues().setLatestStorySend(StorySend.newSend(recipient))
         }
 
         val storyType: StoryType = when {
