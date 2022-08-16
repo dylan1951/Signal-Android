@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name" translatable="false">Signal</string>
+    <string name="app_name" translatable="false">Signal+</string>
 
     <string name="install_url" translatable="false">https://signal.org/install</string>
     <string name="donate_url" translatable="false">https://signal.org/donate</string>
@@ -12,12 +12,12 @@
     <string name="google_pay_url" translatable="false">https://pay.google.com</string>
     <string name="donation_decline_code_error_url" translatable="false">https://support.signal.org/hc/articles/4408365318426#errors</string>
 
-    <string name="yes">Yes</string>
-    <string name="no">No</string>
+    <string name="yes">Fuk ya</string>
+    <string name="no">Na</string>
     <string name="delete">Delete</string>
     <string name="please_wait">Please wait…</string>
     <string name="save">Save</string>
-    <string name="note_to_self">Note to Self</string>
+    <string name="note_to_self">Lmao u talk to urself</string>
 
     <!-- AbstractNotificationBuilder -->
     <string name="AbstractNotificationBuilder_new_message">New message</string>
@@ -210,7 +210,7 @@
 
     <!-- ContactsCursorLoader -->
     <string name="ContactsCursorLoader_recent_chats">Recent chats</string>
-    <string name="ContactsCursorLoader_contacts">Contacts</string>
+    <string name="ContactsCursorLoader_contacts">Nigas</string>
     <string name="ContactsCursorLoader_groups">Groups</string>
     <string name="ContactsCursorLoader_phone_number_search">Phone number search</string>
     <string name="ContactsCursorLoader_username_search">Username search</string>
@@ -250,7 +250,7 @@
     <string name="ConversationItem_error_partially_not_delivered">Partially sent, tap for details</string>
     <string name="ConversationItem_error_network_not_delivered">Send failed</string>
     <string name="ConversationItem_received_key_exchange_message_tap_to_process">Received key exchange message, tap to process.</string>
-    <string name="ConversationItem_group_action_left">%1$s has left the group.</string>
+    <string name="ConversationItem_group_action_left">%1$s rage quit.</string>
     <string name="ConversationItem_send_paused">Send paused</string>
     <string name="ConversationItem_click_to_approve_unencrypted">Send failed, tap for unsecured fallback</string>
     <string name="ConversationItem_click_to_approve_unencrypted_sms_dialog_title">Fallback to unencrypted SMS?</string>
