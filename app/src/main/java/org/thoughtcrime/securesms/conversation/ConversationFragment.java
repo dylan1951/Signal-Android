@@ -1595,13 +1595,10 @@ public class ConversationFragment extends LoggingFragment implements Multiselect
       if (actionMode != null) return;
 
       MessageRecord messageRecord = item.getConversationMessage().getMessageRecord();
-<<<<<<< HEAD
-=======
 
       if (isUnopenedGift(itemView, messageRecord)) {
         return;
       }
->>>>>>> main
 
       if (messageRecord.isSecure()                                        &&
           !messageRecord.isRemoteDelete()                                 &&
